@@ -92,6 +92,12 @@ async def _apply_light_migrations(conn) -> None:
             "is_homeroom BOOLEAN NOT NULL DEFAULT FALSE"
         )
     )
+    await conn.execute(
+        text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "initial_password VARCHAR(64)"
+        )
+    )
 
 
 async def _refresh_user_metrics(db: AsyncSession) -> None:

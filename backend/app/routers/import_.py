@@ -336,6 +336,7 @@ async def commit_import(
             role=UserRole.TEACHER if kind == "teachers" else UserRole.STUDENT,
             username=username,
             password_hash=hash_password(password),
+            initial_password=password,
             must_change_password=True,
             real_name=acc["real_name"],
             gender=acc["gender"],

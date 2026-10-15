@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { usersApi } from '@/api/services'
 import type { AccountOut } from '@/types'
 
@@ -68,6 +68,39 @@ async function printRoster() {
   }
 }
 
+async function bulkResetPasswords() {
+  let password: string
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '将把「当前筛选」内的师生密码统一重置为下面的密码（不含管理员）。此操作会覆盖现有密码，重置后首次登录仍需修改。',
+      '批量重置密码',
+      {
+        confirmButtonText: '确认重置',
+        cancelButtonText: '取消',
+        inputValue: 'Compassio@2026',
+        inputPattern: /.{8,}/,
+        inputErrorMessage: '密码至少 8 位',
+        type: 'warning'
+      }
+    )
+    password = value
+  } catch {
+    return // 用户取消
+  }
+  try {
+    const res = await usersApi.bulkResetPasswords({
+      role: filters.value.role || undefined,
+      class_id: filters.value.class_id,
+      q: filters.value.q || undefined,
+      password
+    })
+    ElMessage.success(`已重置 ${res.data.reset} 个账号，统一密码：${res.data.password}（可点“打印名单”下发）`)
+    await load()
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || '批量重置失败')
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -96,6 +129,7 @@ onMounted(load)
         <el-input v-model="filters.q" placeholder="搜索用户名/姓名/手机号" clearable @keyup.enter="load" />
         <el-button type="primary" @click="load">查询</el-button>
         <el-button plain @click="printRoster">打印名单</el-button>
+        <el-button type="danger" plain @click="bulkResetPasswords">批量重置密码</el-button>
       </div>
 
       <el-table :data="accounts" v-loading="loading" border class="account-table">

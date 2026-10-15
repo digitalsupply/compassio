@@ -47,6 +47,10 @@ class User(Base):
     role: Mapped[UserRole]
     username: Mapped[str] = mapped_column(sa.String(64), unique=True, index=True)
     password_hash: Mapped[str]
+    # 初始密码明文：仅供管理员打印/下发账号名单；账号本人自助改密后清空。
+    initial_password: Mapped[Optional[str]] = mapped_column(
+        sa.String(64), nullable=True
+    )
     must_change_password: Mapped[bool] = mapped_column(default=True)
     real_name: Mapped[str] = mapped_column(sa.String(64))
     gender: Mapped[str] = mapped_column(sa.String(8))

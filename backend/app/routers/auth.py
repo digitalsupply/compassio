@@ -46,6 +46,7 @@ async def change_password(
     if not verify_password(payload.old_password, user.password_hash):
         raise HTTPException(status_code=400, detail="旧密码不正确")
     user.password_hash = hash_password(payload.new_password)
+    user.initial_password = None  # 已自行改密，名单不再显示初始密码
     user.must_change_password = False
     await db.commit()
     return {"ok": True}

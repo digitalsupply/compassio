@@ -10,7 +10,7 @@
 
 | 项 | 值 |
 |---|---|
-| 域名 | compassio.xyz（HTTP:80，用户自行绑 hosts 指向入口 IP） |
+| 域名 | compassio.xyz（HTTP:80，用户自行绑 hosts → 入口 IP） |
 | LLM 默认 | provider `opencode-go`，model `deepseek-v4.1-flash`，base_url `https://opencode.ai/inference/go/v1` |
 | LLM 网关特殊头 | 必须发送 `x-opencode-session: <每次会话随机串>`（缺该头返回 400 MissingSessionID） |
 | 通知渠道（一期） | 仅站内通知中心（前端 5s 轮询，critical 告警需在管理员页面顶部红色横幅+声音提示）；架构预留 webhook 扩展 |
@@ -65,7 +65,7 @@ compassio/
 
 ## 3. 数据模型（SQLAlchemy）
 
-- `users`: id, role(school_admin|teacher|student), username(唯一), password_hash, must_change_password(bool, 初始 true), real_name, gender, phone(教师可空), class_id(学生=所在班级；教师=所属班级), is_homeroom(教师是否该班班主任，学生恒 false), is_active, created_at
+- `users`: id, role(school_admin|teacher|student), username(唯一), password_hash, initial_password(初始密码明文，仅供管理员打印/下发名单；账号本人自助改密后清空), must_change_password(bool, 初始 true), real_name, gender, phone(教师可空), class_id(学生=所在班级；教师=所属班级), is_homeroom(教师是否该班班主任，学生恒 false), is_active, created_at
 - `classes`: id, name(规范格式如"七年级(1)班"), grade_level(primary_g4|junior|senior), head_teacher_id(=班主任 user id)。班级与班主任的对应关系由 `classes.head_teacher_id` 与教师行的 `(class_id, is_homeroom)` 共同保证，同名教师靠班级区分。
 - `scale_defs`: id, scale_id(mht|mssmhs|teacher_ref), payload(JSONB=整份题目库 JSON), version, loaded_at —— 启动时若空自动从 data/*.json 装载；提供管理员"重新导入题目库"端点（支持上传新 JSON 替换，用于教师量表日后换原版）
 - `assessments`: id, user_id, scale_id, status(in_progress|completed), started_at, completed_at, item_order(JSONB: 实际出题顺序), is_valid(效度是否通过), invalidated_reason
@@ -94,7 +94,7 @@ compassio/
 
 auth: `POST /auth/login`（返回 JWT + must_change_password）、`POST /auth/change-password`
 import: `GET /import/template/{kind}`(下载 csv/xlsx 模板)、`POST /import/{teachers|students}`(multipart, xlsx/csv)、`POST /import/{kind}/commit`(校验通过后真正建号)
-users: `GET /admin/accounts?role=&class=&q=`(分页)、`POST /admin/accounts/{id}/reset-password`、`GET /admin/accounts/print-roster?role=&class_id=`(可打印 HTML)
+users: `GET /admin/accounts?role=&class=&q=`(分页)、`POST /admin/accounts/{id}/reset-password`、`POST /admin/accounts/reset-passwords` {role?,class_id?,q?,password?}(按筛选批量重置为统一密码，默认 Compassio@2026，始终排除管理员)、`GET /admin/accounts/print-roster?role=&class_id=`(可打印 HTML，含初始密码、按班级分组)
 assess: `GET /assess/scales`(可用量表列表)、`POST /assess/start` {scale_id}、`GET /assess/{id}/next`（自适应下一题）、`POST /assess/{id}/answer` {item_id,value}、`POST /assess/{id}/finish`、`GET /assess/my-results`、`GET /assess/{id}/report`(打印视图数据)
 admin/report: `GET /admin/reports/classes`(班级汇总：完成率/各维度均值/预警数——不含教师)、`POST /admin/reports/dispatch` {class_id}(把该班学生结果分发给班主任)、`GET /teacher/class-students-results`(班主任查本班)
 notify: `GET /notify/list?unread=`、`POST /notify/{id}/read`、`GET /notify/unread-count`
@@ -175,7 +175,9 @@ env 默认（config.py）：`LLM_PROVIDER=opencode-go`、`LLM_BASE_URL=…`、`L
 - 班级名统一为 "七年级(1)班" 格式，兼容旧写法（初一(3)班→七年级(3)班、全角括号转半角）。
 - 校验：班级不存在自动创建（grade_level 从班级名推断：含"小"或一~六年级 → primary；七/八/九年级或"初"→junior；"高"→senior；推断不出 → junior 默认并标记 warning）；重复用户名策略：重名自动加序号；行级错误全部收集一次返回（不半途失败）。
 - 用户名规则：学生 `s{班级编号序}{姓名拼音小写无分隔}`，教师 `t{姓名拼音}`；拼音转换用 `pypinyin`。
-- 初始密码：8 位随机（数字+大小写+符号排除易混淆字符）；`must_change_password=true`；首次登录强制改密。
+- 初始密码：8 位随机（数字+大小写+符号排除易混淆字符）；写入 `users.initial_password`（明文，供管理员打印/下发），`must_change_password=true`；首次登录强制改密，本人自助改密后清空 `initial_password`。
+- 账号管理「打印名单」按班级分组（同一班级师生相邻，班内教师在前、学生按姓名在后，无班级账号排最后），列为 姓名/用户名/密码/班级（不再显示角色与是否班主任）；密码列取 `initial_password`，已自行改密者显示"已修改"。
+- 账号管理支持按当前筛选（班级/角色/关键词）**批量重置密码**为统一密码（默认 `Compassio@2026`，可自定义，至少 8 位）：重置后 `must_change_password=true`、`initial_password=统一密码`，便于一次性打印下发；**始终排除管理员账号**，避免管理员被锁。所有被重置账号共用同一份 bcrypt 哈希（明文相同，避免 900+ 账号逐个哈希拖慢）。
 - commit 返回可打印名单（HTML 表格，`@media print`），管理员可批量打印下发。
 - 多工作表 xlsx 按工作表名匹配导入类型（含 `教师/teacher` 或 `学生/student`），匹配不到才退回活动表；教师性别列可留空，记"未知"（学生仍必填）。
 - **导入非幂等**：同一份表重复导入会生成带序号后缀的重复账号（如 `s23baihexiang2`），重复前先清理（见 `docs/02-CI-CD运维手册.md` 第七节）。
@@ -186,7 +188,7 @@ env 默认（config.py）：`LLM_PROVIDER=opencode-go`、`LLM_BASE_URL=…`、`L
 - 登录（含强制改密流程）
 - 学生：首页（可用量表+学段限制提示）、作答页（单题呈现、进度条、LLM 过渡语气泡、支持断点续答）、我的报告（雷达图用 ECharts、评级、结论、打印按钮）
 - 教师：我的测评（teacher_ref）、我的报告（仅本人）、本班学生结果（收到分发后）
-- 管理员：导入（模板下载/上传/校验结果/commit）、账号管理（查询/重置密码/打印名单）、通知中心（未读红点+critical 顶部红色横幅+提示音）、班级报告（完成率/维度均值/预警名单）、分发结果给班主任、LLM 配置（表单+测试按钮）、题目库管理（版本查看/替换上传）
+- 管理员：导入（模板下载/上传/校验结果/commit）、账号管理（查询/重置密码/批量重置为统一密码/打印名单）、通知中心（未读红点+critical 顶部红色横幅+提示音）、班级报告（完成率/维度均值/预警名单）、分发结果给班主任、LLM 配置（表单+测试按钮）、题目库管理（版本查看/替换上传）
 - 全站：Compassio 品牌（罗盘 logo 用 CSS/SVG 简笔）、口号"提前指引，向阳成长"、页脚免责声明："本系统结果属于发展性筛查参考，不构成医学诊断"
 
 ## 10. 部署

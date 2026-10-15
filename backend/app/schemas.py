@@ -234,6 +234,15 @@ class AccountOut(BaseModel):
     must_change_password: bool
 
 
+class BulkResetPasswordIn(BaseModel):
+    """按当前筛选批量重置密码（管理员用，不含管理员自身）。"""
+
+    role: str | None = None
+    class_id: int | None = None
+    q: str | None = None
+    password: str | None = None
+
+
 class ClassReport(BaseModel):
     class_id: int
     class_name: str

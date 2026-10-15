@@ -90,7 +90,17 @@ export const usersApi = {
       `/admin/accounts/${id}/reset-password`
     ),
   printRoster: (params?: { role?: string; class_id?: number }) =>
-    client.get<string>('/admin/accounts/print-roster', { params })
+    client.get<string>('/admin/accounts/print-roster', { params }),
+  bulkResetPasswords: (data: {
+    role?: string
+    class_id?: number
+    q?: string
+    password?: string
+  }) =>
+    client.post<{ reset: number; password: string }>(
+      '/admin/accounts/reset-passwords',
+      data
+    )
 }
 
 export const notifyApi = {
