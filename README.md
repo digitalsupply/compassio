@@ -61,14 +61,11 @@
    nginx 托管       └───────────────────┘
 ```
 
-代码同仓库双部署形态：
-
-- **传统部署**：`deploy/compose/docker-compose.yml`（Postgres + Redis + backend + frontend nginx，4 条命令起）
-- **集群部署**：`deploy/k8s`（kustomize：CNPG PG、Redis、双 Deployment、Traefik Ingress `compassio.xyz`）
+一键容器化部署：`deploy/compose/docker-compose.yml`（Postgres + Redis + backend + frontend nginx，4 条命令起）。
 
 ## 快速开始
 
-### 传统（compose）
+### 使用 Docker Compose 启动
 
 ```bash
 cd deploy/compose
@@ -79,31 +76,33 @@ docker compose up -d
 
 首次启动自动建表并装载题目库。管理员账号：`admin / Compassio@2026`（**上线后立即改**）。
 
-### 集群（GitOps 全自动）
-
-本仓库代码 push 会自动：GitLab webhook → Tekton Pipeline（BuildKit 构建 backend/frontend 双镜像）→ Harbor（自动漏洞扫描）→ `compassio-gitops` 仓库 bump image tag → ArgoCD 自动同步 → Traefik 暴露 `http://compassio.xyz`（用户在访问侧绑定 hosts 指向 LB `10.0.0.252`）。
-
-手动同步：`argocd app sync compassio`
-
 ## 命令速查
 
 | 场景 | 命令 |
 |---|---|
 | 本地跑后端测试 | `cd backend && python -m pytest -q` |
 | 本地前端构建 | `cd frontend && npm install && npm run build` |
-| 看 CI 进度 | `kubectl get pipelineruns -n cicd | grep compassio` |
-| 看 Harbor 扫描 | Harbor UI → 项目 compassio → 制品 → 扫描报告 |
 | 重置某师生密码 | 管理后台 → 账号管理 → 重置密码 |
 | 替换教师量表题库 | 管理后台 → 题目库管理 → teacher_ref → 上传新 JSON |
+
+## 测试数据
+
+`testdata/` 提供**合成**的导入样例（非真实师生数据），可直接用于体验「导入师生」流程：
+
+| 文件 | 说明 |
+|---|---|
+| `testdata/教师导入表.xlsx` | sheet `teachers`，列：姓名,手机号,性别,班级,是否班主任（含两个同名班主任，用于演示按班级区分） |
+| `testdata/学生导入表.xlsx` | sheet `students`，列：姓名,班级,性别,班主任 |
+| `testdata/工作簿2.xlsx` | 原始底稿（`students` / `teacher` 两个 sheet，含手机号） |
+
+使用方式：管理后台 → 导入师生 → 下载模板 / 上传校验 / 生成账号。
 
 ## 着重声明
 
 - 所有结果属于**发展性筛查参考**，不构成医学诊断；高分提示联系学校心理老师或专业机构
 - 学生心理健康数据按班级最小化分发给班主任；教师数据仅本人可见；系统保留审计日志
-- Pipeline 中 LLM 超时/失败均自动回退，不影响可用性
+- LLM 超时/失败均自动回退，不影响可用性
 
 ## 技术文档
 
-- [`SPEC.md`](SPEC.md) — 完整技术规格（施工图：数据模型/权限矩阵/自适应算法/LLM 抽象/部署）
-- [`docs/01-全过程实录.md`](docs/01-全过程实录.md) — 本次交付全过程、配置细节与注意事项
-- [`docs/02-CI-CD运维手册.md`](docs/02-CI-CD运维手册.md) — Tekton/Harbor/GitOps/ArgoCD/隧道运维手册
+- [`SPEC.md`](SPEC.md) — 完整技术规格（数据模型/权限矩阵/自适应算法/LLM 抽象/部署）
