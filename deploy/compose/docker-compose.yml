@@ -1,0 +1,57 @@
+name: compassio
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: compassio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-compassio_pg_dev}
+      POSTGRES_DB: compassio
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U compassio -d compassio"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../../backend
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://compassio:${POSTGRES_PASSWORD:-compassio_pg_dev}@postgres:5432/compassio
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_change_me}
+      SECRET_KEY: ${SECRET_KEY:-dev_jwt_secret_change_me}
+      BCRYPT_ROUNDS: "10"
+      LLM_PROVIDER: ${LLM_PROVIDER:-opencode-go}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://opencode.ai/inference/go/v1}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-v4.1-flash}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../../frontend
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
