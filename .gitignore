@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+deploy/k8s/overlays/prod/secret.yaml
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Data
+*.sqlite3
+*.db
