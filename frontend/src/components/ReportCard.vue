@@ -7,74 +7,101 @@ const props = defineProps<{ report: ReportOut; title?: string; subtitle?: string
 const chartRef = ref<HTMLDivElement | null>(null)
 let chart: any = null
 
-const dimensions = computed(() => {
-  const scores = props.report.scores || {}
+function round2(value: number): number {
+  return Number.isFinite(value) ? Number(value.toFixed(2)) : 0
+}
+
+const dimensions = computed<{ name: string; value: number }[]>(() => {
+  const scores = props.report?.scores || {}
   const dims: { name: string; value: number }[] = []
   const sub = scores.subscales || {}
-  for (const [k, v] of Object.entries(sub)) {
-    const val = typeof v === 'object' && v !== null ? (v as any).score ?? 0 : Number(v) || 0
-    dims.push({ name: k, value: Number(val.toFixed ? val.toFixed(2) : val) })
+  for (const [key, value] of Object.entries(sub)) {
+    if (value && typeof value === 'object') {
+      const info = value as any
+      dims.push({ name: info.name || key, value: round2(Number(info.score ?? 0)) })
+    } else {
+      dims.push({ name: key, value: round2(Number(value) || 0) })
+    }
   }
-  const fac = scores.factors || {}
-  for (const [k, v] of Object.entries(fac)) {
-    const val = typeof v === 'object' && v !== null ? (v as any).mean ?? (v as any).score ?? 0 : Number(v) || 0
-    dims.push({ name: k, value: Number(val.toFixed ? val.toFixed(2) : val) })
+  const factors = scores.factors || {}
+  for (const [key, value] of Object.entries(factors)) {
+    if (value && typeof value === 'object') {
+      const info = value as any
+      dims.push({ name: info.name || key, value: round2(Number(info.mean ?? info.score ?? 0)) })
+    } else {
+      dims.push({ name: key, value: round2(Number(value) || 0) })
+    }
   }
   return dims
 })
 
 const overall = computed(() => {
-  const s = props.report.scores || {}
+  const s = props.report?.scores || {}
   const parts: string[] = []
-  if (s.band) parts.push(`整体评级：${s.band}`)
-  if (s.total_score !== undefined) parts.push(`总分：${s.total_score}`)
-  if (s.total_mean !== undefined) parts.push(`总均分：${s.total_mean}`)
-  if (s.validity_score !== undefined) parts.push(`效度分：${s.validity_score}`)
+  if (s.total_score !== undefined && s.total_score !== null) parts.push(`总分：${s.total_score}`)
+  if (s.total_mean !== undefined && s.total_mean !== null) parts.push(`总均分：${s.total_mean}`)
+  const label = s.total_label || s.band
+  if (label) parts.push(`评级：${label}`)
+  if (s.validity_score !== undefined && s.validity_score !== null) {
+    parts.push(`效度分：${s.validity_score}`)
+  }
   return parts.join(' ｜ ') || '整体情况请见下方图表'
 })
 
-function initChart() {
-  if (!chartRef.value) return
-  if (chart) chart.dispose()
-  chart = echarts.init(chartRef.value)
-  const data = dimensions.value
-  const maxVal = Math.max(1, ...data.map((d) => d.value))
-  chart.setOption({
-    tooltip: { trigger: 'item' },
-    radar: {
-      indicator: data.map((d) => ({ name: d.name, max: maxVal })),
-      radius: '65%'
-    },
-    series: [
+const invalidNote = computed(() => props.report?.is_valid === false)
+
+function renderChart() {
+  try {
+    const data = dimensions.value
+    if (!chartRef.value || data.length === 0) {
+      // 空数据安全：不 init，避免 echarts 抛错打断整页。
+      if (chart) {
+        chart.dispose()
+        chart = null
+      }
+      return
+    }
+    if (!chart) chart = echarts.init(chartRef.value)
+    const maxVal = Math.max(1, ...data.map((d) => d.value))
+    chart.setOption(
       {
-        type: 'radar',
-        data: [
+        tooltip: { trigger: 'item' },
+        radar: {
+          indicator: data.map((d) => ({ name: d.name, max: maxVal })),
+          radius: '65%'
+        },
+        series: [
           {
-            value: data.map((d) => d.value),
-            name: '维度得分',
-            areaStyle: { opacity: 0.2 },
-            lineStyle: { color: '#3b82f6' },
-            itemStyle: { color: '#3b82f6' }
+            type: 'radar',
+            data: [
+              {
+                value: data.map((d) => d.value),
+                name: '维度得分',
+                areaStyle: { opacity: 0.2 },
+                lineStyle: { color: '#3b82f6' },
+                itemStyle: { color: '#3b82f6' }
+              }
+            ]
           }
         ]
-      }
-    ]
-  })
+      },
+      true
+    )
+  } catch (e) {
+    console.error('report chart render error', e)
+    try {
+      chart?.dispose()
+    } catch {
+      /* ignore */
+    }
+    chart = null
+  }
 }
 
-watch(dimensions, () => {
-  if (chart) {
-    const data = dimensions.value
-    const maxVal = Math.max(1, ...data.map((d) => d.value))
-    chart.setOption({
-      radar: { indicator: data.map((d) => ({ name: d.name, max: maxVal })) },
-      series: [{ data: [{ value: data.map((d) => d.value) }] }]
-    })
-  }
-})
+watch(dimensions, renderChart)
 
 onMounted(() => {
-  initChart()
+  renderChart()
   const handler = () => chart?.resize()
   window.addEventListener('resize', handler)
   onUnmounted(() => {
@@ -101,8 +128,8 @@ function print() {
     </div>
 
     <el-alert
-      v-if="report.is_valid === false"
-      title="本次作答效度量表提示异常，结果仅供参考，建议重新测评。"
+      v-if="invalidNote"
+      title="本次作答效度偏高，结果仅作参考"
       type="warning"
       :closable="false"
       show-icon
@@ -121,6 +148,7 @@ function print() {
     <div class="two-col">
       <div class="chart-wrap">
         <div ref="chartRef" class="chart"></div>
+        <div v-if="dimensions.length === 0" class="chart-empty">本次测评暂无可视化维度</div>
       </div>
       <div class="dim-table">
         <h3>维度得分</h3>
@@ -187,10 +215,22 @@ function print() {
 }
 .chart-wrap {
   min-height: 320px;
+  position: relative;
 }
 .chart {
   width: 100%;
   height: 320px;
+}
+.chart-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 14px;
+  background: #f9fafb;
+  border-radius: 8px;
 }
 .dim-table h3 {
   margin: 0 0 12px;

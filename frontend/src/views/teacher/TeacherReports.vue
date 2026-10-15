@@ -13,7 +13,7 @@ async function load() {
   loading.value = true
   try {
     const res = await assessApi.myResults()
-    reports.value = res.data.results || []
+    reports.value = (res.data.results || []).filter((r) => r.status === 'completed')
     selected.value = reports.value[0] || null
   } catch (e: any) {
     ElMessage.error(e.response?.data?.detail || '加载报告失败')

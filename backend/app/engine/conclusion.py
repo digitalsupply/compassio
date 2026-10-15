@@ -1,6 +1,11 @@
+import asyncio
+from time import perf_counter
 from typing import Any
 
+from app.config import get_settings
 from app.llm.provider import LLMProvider
+from app.observability.metrics import inc_fallback, inc_llm_request, observe_llm
+from app.observability.tracing import set_span_attributes, start_span
 
 
 async def generate_conclusion(
@@ -14,6 +19,7 @@ async def generate_conclusion(
     is_teacher = scale_id == "teacher_ref"
 
     if provider is None:
+        inc_fallback("conclusion")
         return (_template_conclusion(scale_id, scores, risk_flags), True)
 
     if is_teacher:
@@ -25,31 +31,82 @@ async def generate_conclusion(
             f"提示标记：{risk_flags}\n"
         )
     else:
+        severities = {f.get("severity") for f in (risk_flags or [])}
+        has_critical = "critical" in severities
+        has_high = "high" in severities
+        priority_rule = ""
+        if has_critical:
+            priority_rule = (
+                "【最高优先级】预警含 critical：第一句必须直接提示存在需要立即关注的风险信号，"
+                "请学生尽快告诉信任的老师/家长或学校心理老师，并给出陪伴式安抚；"
+                "严禁先说\"整体平稳/状态良好\"，也不得淡化风险；之后再用温和语气补充得分概况与建议。\n"
+            )
+        elif has_high:
+            priority_rule = (
+                "【优先级】预警含 high：先用一句温和但清楚的提醒点出需要重点关注的方面，再补充得分概况与建议。\n"
+            )
         prompt = (
             "你是一位学校心理健康筛查助手。请根据以下量表得分与预警标记，写一段120-200字的结论。\n"
             "要求：非诊断语言（\"筛查结果提示…建议…\"）；正向框架；1-2条可执行建议；\n"
-            "出现较高风险时建议联系心理老师；结尾一句关怀语\"这不是标签，只是一次看见自己的机会\"。\n\n"
+            "出现较高风险时建议联系心理老师；结尾一句关怀语\"这不是标签，只是一次看见自己的机会\"。\n"
+            + priority_rule +
             f"结果：{scores}\n"
             f"预警：{risk_flags}\n"
         )
 
-    try:
-        result = await provider.chat(
-            messages=[
-                {"role": "system", "content": "你只用中文输出一段结论，不输出JSON或Markdown。"},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.6,
-            max_tokens=300,
+    stage = "conclusion"
+    model = getattr(getattr(provider, "config", None), "model", "unknown")
+    started = perf_counter()
+    outcome = "ok"
+    span = start_span("llm.conclusion", {"scale": scale_id, "stage": stage})
+    with span as active:
+        try:
+            inc_llm_request(stage, get_settings().adaptive_strategy)
+            result = await provider.chat(
+                messages=[
+                    {"role": "system", "content": "你只用中文输出一段结论，不输出JSON或Markdown。"},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.6,
+                max_tokens=1200,  # 推理模型需预留思考 token，否则正文可能为空
+            )
+            content = result.get("content")
+            if isinstance(content, dict):
+                content = content.get("summary") or content.get("conclusion") or str(content)
+            if isinstance(content, str) and len(content.strip()) >= 20:
+                duration = perf_counter() - started
+                set_span_attributes(
+                    active,
+                    {
+                        "scale": scale_id,
+                        "stage": stage,
+                        "outcome": "ok",
+                        "fallback": False,
+                        "duration_ms": round(duration * 1000, 3),
+                    },
+                )
+                observe_llm(stage, model, "ok", duration)
+                return content.strip(), False
+        except asyncio.TimeoutError:
+            outcome = "timeout"
+        except Exception:
+            outcome = "error"
+        duration = perf_counter() - started
+        if outcome == "ok":
+            outcome = "error"
+        set_span_attributes(
+            active,
+            {
+                "scale": scale_id,
+                "stage": stage,
+                "outcome": outcome,
+                "fallback": True,
+                "duration_ms": round(duration * 1000, 3),
+            },
         )
-        content = result.get("content")
-        if isinstance(content, dict):
-            content = content.get("summary") or content.get("conclusion") or str(content)
-        if isinstance(content, str) and len(content.strip()) >= 20:
-            return content.strip(), False
-    except Exception:
-        pass
 
+    observe_llm(stage, model, outcome, duration)
+    inc_fallback(stage)
     return (_template_conclusion(scale_id, scores, risk_flags), True)
 
 

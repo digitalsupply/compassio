@@ -24,6 +24,11 @@ export interface ScaleBrief {
   item_count: number
   instruction: string
   options: Array<{ value: number; label: string }>
+  // 重复测评提示所需状态（问题 2）
+  completed: boolean
+  completed_at: string | null
+  attempts: number
+  in_progress: boolean
 }
 
 export interface StartAssessmentResponse {
@@ -39,6 +44,10 @@ export interface NextItem {
   transition: string | null
   progress: { answered: number; total: number }
   finished: boolean
+  // Layered in by the backend for observability; the UI only uses `source`
+  // to surface gentle feedback when the next item came from LLM fusion.
+  source?: string | null
+  mode?: string | null
 }
 
 export interface FinishResponse {
@@ -59,9 +68,19 @@ export interface ReportOut {
   llm_summary: string | null
   fallback_used: boolean
   created_at: string | null
+  attempt_no?: number | null
+}
+
+export interface StudentBrief {
+  id: number
+  real_name: string
+  username: string
+  gender?: string
+  class_name?: string | null
 }
 
 export interface MyResultsOut {
+  student?: StudentBrief | null
   results: ReportOut[]
 }
 
@@ -160,4 +179,36 @@ export interface ClassReport {
   completion_rate: number
   dimension_means: Record<string, number>
   risk_counts: Record<string, number>
+  total: number
+  completed: number
+  pending: number
+}
+
+export interface TeacherClassSummary {
+  class_id: number
+  class_name: string
+  scale_id: string
+  total: number
+  completed: number
+  pending: number
+  completion_rate: number
+}
+
+export interface TeacherClassResultOut {
+  assessment_id: number
+  student_name: string
+  username: string
+  class_name: string
+  gender: string
+  scale_id: string
+  scale_name: string
+  attempt_no?: number | null
+  status: string
+  is_valid: boolean | null
+  scores: Record<string, any>
+  risk_flags: Array<Record<string, any>>
+  llm_summary: string | null
+  fallback_used: boolean
+  completed_at: string | null
+  created_at: string | null
 }

@@ -20,6 +20,18 @@ class Settings(BaseSettings):
 
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
 
+    # next-item prefetch cache (see app/next_cache.py)
+    prefetch_enabled: bool = Field(default=True, alias="PREFETCH_ENABLED")
+    # otel endpoint; empty string disables tracing entirely
+    otel_exporter_otlp_endpoint: Optional[str] = Field(
+        default=None, alias="OTEL_EXPORTER_OTLP_ENDPOINT"
+    )
+    otel_service_name: str = Field(
+        default="compassio-backend", alias="OTEL_SERVICE_NAME"
+    )
+
+    bcrypt_rounds: int = Field(default=10, alias="BCRYPT_ROUNDS")
+
     secret_key: str = Field(default="change-me-in-production", alias="SECRET_KEY")
     access_token_expire_minutes: int = Field(default=60 * 24, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     algorithm: str = "HS256"
@@ -33,6 +45,18 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="deepseek-v4.1-flash", alias="LLM_MODEL")
     llm_timeout_s: int = Field(default=30, alias="LLM_TIMEOUT_S")
     llm_enabled: bool = Field(default=True, alias="LLM_ENABLED")
+
+    # Adaptive item selection strategy (SPEC §6.2):
+    #   fusion     - rules pick every item; LLM only at sparse checkpoints
+    #   adaptive   - LLM on every weighted-phase item (legacy, ~84 calls/100)
+    #   rules_only - never call the LLM
+    adaptive_strategy: str = Field(default="fusion", alias="ADAPTIVE_STRATEGY")
+    # Gap (in answered items) between two LLM checkpoints, randomised per
+    # checkpoint in [min, max].
+    adaptive_llm_interval_min: int = Field(default=12, alias="ADAPTIVE_LLM_INTERVAL_MIN")
+    adaptive_llm_interval_max: int = Field(default=20, alias="ADAPTIVE_LLM_INTERVAL_MAX")
+    # Upper bound on how many candidate items are sent to the LLM (ids only).
+    llm_pick_top_n: int = Field(default=20, alias="LLM_PICK_TOP_N")
 
     # Test/CI knobs
     testing: bool = Field(default=False, alias="TESTING")

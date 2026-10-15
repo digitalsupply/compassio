@@ -16,6 +16,13 @@ passlib[bcrypt]>=1.7.4
 # pin: passlib 1.7.4 is incompatible with bcrypt>=5 (72-byte wrap-bug probe fails)
 bcrypt==4.0.1
 python-jose[cryptography]>=3.3
+# observability (LGTM: Prometheus metrics, OTLP traces)
+prometheus-client>=0.20
+opentelemetry-sdk>=1.25
+opentelemetry-exporter-otlp-proto-grpc>=1.25
+opentelemetry-instrumentation-fastapi>=0.46b0
+opentelemetry-instrumentation-httpx>=0.46b0
+opentelemetry-instrumentation-sqlalchemy>=0.46b0
 # tests
 pytest>=8.0
 pytest-asyncio>=0.23

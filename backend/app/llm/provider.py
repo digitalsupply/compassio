@@ -69,6 +69,9 @@ class LLMProvider:
 
         url = f"{self.config.base_url.rstrip('/')}/chat/completions"
         last_error: Exception | None = None
+        # 推理模型（deepseek 等）会先花 token 思考；若被截断导致 content 为空，
+        # 自动把 max_tokens 放大后重试一次，避免误判为“无输出”。
+        truncated_retry_left = 1
         for attempt in range(2):
             async with self._client() as client:
                 try:
@@ -89,6 +92,15 @@ class LLMProvider:
                             parsed = content
                     else:
                         parsed = content
+                    finish_reason = choice.get("finish_reason")
+                    if (
+                        (parsed is None or (isinstance(parsed, str) and not parsed.strip()))
+                        and finish_reason == "length"
+                        and truncated_retry_left > 0
+                    ):
+                        truncated_retry_left -= 1
+                        payload["max_tokens"] = min(max(max_tokens * 4, 1200), 4000)
+                        continue
                     return {
                         "content": parsed,
                         "reasoning_content": message.get("reasoning_content"),

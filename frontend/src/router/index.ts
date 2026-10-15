@@ -85,12 +85,6 @@ const router = createRouter({
       meta: { role: 'school_admin' }
     },
     {
-      path: '/admin/dispatch',
-      name: 'AdminDispatch',
-      component: () => import('@/views/admin/AdminDispatch.vue'),
-      meta: { role: 'school_admin' }
-    },
-    {
       path: '/admin/llm',
       name: 'AdminLLMConfig',
       component: () => import('@/views/admin/AdminLLMConfig.vue'),

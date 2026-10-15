@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import get_db
-from app.models import User
+from app.models import Class, User
 from app.schemas import ChangePasswordRequest, LoginRequest, Token
 from app.security import create_access_token, get_current_user, hash_password, verify_password
 
@@ -49,3 +49,23 @@ async def change_password(
     user.must_change_password = False
     await db.commit()
     return {"ok": True}
+
+@router.get("/me")
+async def me(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """当前登录用户的基本信息（本人可见；不返回任何他人数据）。"""
+    class_name = None
+    if user.class_id is not None:
+        cls = await db.get(Class, user.class_id)
+        class_name = cls.name if cls else None
+    return {
+        "id": user.id,
+        "username": user.username,
+        "real_name": user.real_name,
+        "gender": user.gender or "",
+        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        "class_name": class_name,
+        "is_homeroom": bool(getattr(user, "is_homeroom", False)),
+    }

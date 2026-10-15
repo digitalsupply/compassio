@@ -112,14 +112,22 @@ scales: `GET /admin/scales`(当前题目库版本)、`POST /admin/scales/{scale_
 
 ### 6.2 LLM 自适应（engine/adaptive.py）
 
-目标：**依据作答情况实时调整下一题**，同时保证计分完整性。
+目标：**依据作答情况实时调整下一题**，同时保证计分完整性，并控制 LLM 成本。
+
+**策略（`ADAPTIVE_STRATEGY`，默认 `fusion`）**：
+- `fusion`（生产默认）：**规则负责每一题的选题**；LLM 每 **12~20 题随机一个检查点**参与一次（全局重排 + 过渡语）。一份 100 题 MHT 的 LLM 调用从 ~84 次降到 **5~8 次**（实测见 docs/07）。
+- `adaptive`：每题都调 LLM（旧行为，成本最高，仅调试用）。
+- `rules_only`：完全不调 LLM（零 API 成本）。
+- 相关参数：`ADAPTIVE_LLM_INTERVAL_MIN=12`、`ADAPTIVE_LLM_INTERVAL_MAX=20`、`LLM_PICK_TOP_N=20`。
+- 检查点调度器按测评持久化（Redis `compassio:llm_sched:{assessment_id}`，TTL 2h；Redis 不可用降级进程内缓存），同一测评可复现。
+- 预取（`POST /answer` 后异步预算下一题）与融合策略叠加：LLM 调用发生在预取任务里，**学生侧无等待**。
 
 算法（CAT-lite 两阶段）：
-1. **覆盖阶段**：每个 subscale 先顺序抽 2 题（保证广度采样；效度量表题始终全部作答）。
-2. **加权阶段**：剩余题目按维度动态权重排序：当前维度均分越接近预警阈值权重越高（风险维度优先探查）；同维度内按题号顺序。
-3. LLM 角色（每次 next 调用，非必需成功）：
-   - 输入：维度当前得分概况（不传整题文本，脱敏+省 token）、下一候选题 3 个；
-   - 输出 JSON：`{"item_id": n, "transition": "一句不超过20字的过渡关怀语（可选）"}`；
+1. **覆盖阶段**：每个 subscale 先顺序抽 2 题（保证广度采样；效度量表题始终全部作答）——**任何策略下都不调用 LLM**，返回 `source="rule_coverage"`。
+2. **加权阶段**：剩余题目按维度动态权重排序：当前维度均分越接近预警阈值权重越高（风险维度优先探查）；同维度内按题号顺序；返回 `source="rule_weighted"`；仅检查点返回 `source="llm_fusion"`。
+3. LLM 角色（`fusion` 下仅在检查点调用；`adaptive` 下每题调用；非必需成功）：
+   - 输入：维度当前得分概况（不传题干原文，脱敏+省 token）、候选题集（默认前 20 个，只给 id 与所属维度）；
+   - 输出 JSON：`{"ordered_ids": [候选集子集], "transition": "一句不超过20字的过渡关怀语（可选）"}`（兼容旧的单题 `item_id` 形态）；
    - 约束：item_id 必须来自候选集，否则回退规则排序第一题；LLM 只能**选题与说过渡语**，不能改题目文本、不能跳过效度题、不能减少总题量（100/60/60 题全部作答后才 finish）。
 4. **回退**：LLM 超时(>8s)/失败/返回非法 → 直接用规则排序下一题，`fallback_used` 计数（结果里记录自适应回退比例）。
 5. `item_order` 存实际出题顺序，报告可回放。
@@ -169,6 +177,9 @@ env 默认（config.py）：`LLM_PROVIDER=opencode-go`、`LLM_BASE_URL=…`、`L
 - 用户名规则：学生 `s{班级编号序}{姓名拼音小写无分隔}`，教师 `t{姓名拼音}`；拼音转换用 `pypinyin`。
 - 初始密码：8 位随机（数字+大小写+符号排除易混淆字符）；`must_change_password=true`；首次登录强制改密。
 - commit 返回可打印名单（HTML 表格，`@media print`），管理员可批量打印下发。
+- 多工作表 xlsx 按工作表名匹配导入类型（含 `教师/teacher` 或 `学生/student`），匹配不到才退回活动表；教师性别列可留空，记"未知"（学生仍必填）。
+- **导入非幂等**：同一份表重复导入会生成带序号后缀的重复账号（如 `s23baihexiang2`），重复前先清理（见 `docs/02-CI-CD运维手册.md` 第七节）。
+- 批量导入性能：bcrypt 轮数由 `BCRYPT_ROUNDS` 控制（默认 10，887 人实测 ≈1分45秒）；nginx 前端已放宽 `proxy_read_timeout/send_timeout=600s`、`client_max_body_size=20m`。新增列走启动时 `_apply_light_migrations`（`ADD COLUMN IF NOT EXISTS`），无需手工迁移。
 
 ## 9. 前端页面
 

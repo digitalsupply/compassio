@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Loading } from '@element-plus/icons-vue'
 import { assessApi } from '@/api/services'
 import type { NextItem, ScaleBrief } from '@/types'
 
@@ -14,7 +15,50 @@ const current = ref<NextItem | null>(null)
 const scales = ref<ScaleBrief[]>([])
 const loading = ref(false)
 const transitionVisible = ref(false)
+// 仅在请求较慢时才出现的等待提示，避免快路径闪烁。
+const loadingHintVisible = ref(false)
+// 当选题来源为 llm_fusion 时出现一次的温和提示。
+const sourceNoticeVisible = ref(false)
 const scaleId = computed(() => (route.query.scale_id as string) || '')
+
+// 请求超过 400ms 才提示，避免命中预取缓存（<400ms）时闪烁。
+const SLOW_HINT_DELAY_MS = 400
+let loadingHintTimer: ReturnType<typeof setTimeout> | null = null
+let sourceNoticeTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearLoadingHint() {
+  if (loadingHintTimer) {
+    clearTimeout(loadingHintTimer)
+    loadingHintTimer = null
+  }
+  loadingHintVisible.value = false
+}
+
+function scheduleLoadingHint() {
+  clearLoadingHint()
+  loadingHintTimer = setTimeout(() => {
+    loadingHintVisible.value = true
+    loadingHintTimer = null
+  }, SLOW_HINT_DELAY_MS)
+}
+
+function hideSourceNotice() {
+  if (sourceNoticeTimer) {
+    clearTimeout(sourceNoticeTimer)
+    sourceNoticeTimer = null
+  }
+  sourceNoticeVisible.value = false
+}
+
+function showSourceNotice() {
+  hideSourceNotice()
+  sourceNoticeVisible.value = true
+  // 2.5 秒后自动消失，不打断作答。
+  sourceNoticeTimer = setTimeout(() => {
+    sourceNoticeVisible.value = false
+    sourceNoticeTimer = null
+  }, 2500)
+}
 
 const progressPct = computed(() => {
   if (!current.value) return 0
@@ -37,6 +81,7 @@ async function loadScales() {
 
 async function fetchNext() {
   loading.value = true
+  scheduleLoadingHint()
   try {
     const res = await assessApi.next(assessmentId)
     current.value = res.data
@@ -44,18 +89,24 @@ async function fetchNext() {
       transitionVisible.value = true
       setTimeout(() => (transitionVisible.value = false), 2500)
     }
+    // LLM 融合选题：温和提示一次，不打断作答。
+    if (res.data.source === 'llm_fusion') {
+      showSourceNotice()
+    }
     if (res.data.finished) {
       await finish()
     }
   } catch (e: any) {
     ElMessage.error(e.response?.data?.detail || '加载题目失败')
   } finally {
+    clearLoadingHint()
     loading.value = false
   }
 }
 
 async function answer(value: number) {
   if (!current.value?.item_id) return
+  hideSourceNotice()
   loading.value = true
   try {
     await assessApi.answer(assessmentId, current.value.item_id, value)
@@ -84,6 +135,11 @@ onMounted(() => {
   loadScales()
   fetchNext()
 })
+
+onUnmounted(() => {
+  clearLoadingHint()
+  hideSourceNotice()
+})
 </script>
 
 <template>
@@ -101,8 +157,24 @@ onMounted(() => {
         </div>
       </transition>
 
+      <transition name="bubble">
+        <el-alert
+          v-if="sourceNoticeVisible"
+          class="source-notice"
+          type="info"
+          :closable="false"
+          show-icon
+          title="已结合你的作答，微调了后面的题目顺序"
+        />
+      </transition>
+
       <div v-if="current?.text" class="question">
         <p class="q-text">{{ current.text }}</p>
+      </div>
+
+      <div v-if="loadingHintVisible" class="loading-hint" role="status" aria-live="polite">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>正在为你斟酌下一题…</span>
       </div>
 
       <div v-if="scaleInfo" class="options">
@@ -173,6 +245,21 @@ onMounted(() => {
   font-size: 18px;
   line-height: 1.6;
   margin: 0;
+}
+.source-notice {
+  margin-bottom: 20px;
+}
+.loading-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -8px 0 24px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: #6b7280;
+}
+.loading-hint .el-icon {
+  color: #3b82f6;
 }
 .options {
   display: grid;

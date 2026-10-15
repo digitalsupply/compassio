@@ -16,7 +16,6 @@ const nav = computed(() => {
       { label: '导入师生', path: '/admin/import' },
       { label: '账号管理', path: '/admin/accounts' },
       { label: '班级报告', path: '/admin/class-reports' },
-      { label: '分发结果', path: '/admin/dispatch' },
       { label: 'LLM 配置', path: '/admin/llm' },
       { label: '题目库', path: '/admin/scales' }
     ]

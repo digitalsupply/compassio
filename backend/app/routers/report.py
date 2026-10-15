@@ -1,29 +1,46 @@
 from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
-from app.models import Assessment, AssessmentStatus, Class, Result, User, UserRole
-from app.schemas import ClassReport, ReportOut
-from app.security import get_current_user, require_admin, require_role
+from app.export_service import ExportError, build_class_export, render_export
+from app.models import Assessment, AssessmentStatus, Class, User, UserRole
+from app.schemas import ClassReport
+from app.security import require_admin
 
 router = APIRouter()
 
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
+# 班级报告可统计的学生量表；教师量表（teacher_ref）永不进入统计。
+_CLASS_REPORT_SCALES = ("mht", "mssmhs")
+# 允许的统计口径：all（合并，向后兼容）+ 单一量表。
+_CLASS_REPORT_SCALE_CHOICES = ("all",) + _CLASS_REPORT_SCALES
 
 
 @router.get("/classes", response_model=list[ClassReport])
 async def class_reports(
+    scale_id: str = Query("all"),
     db: AsyncSession = Depends(get_db),
     admin=Depends(require_admin),
 ):
+    """班级完成人数/完成率/维度均值统计。
+
+    `scale_id` 决定统计口径，与导出 `GET /reports/export?scale_id=` 对齐：
+    - `mht` / `mssmhs`：只统计该量表（与导出文件同一口径）；
+    - `all`（默认，向后兼容）：合并 mht + mssmhs（任一量表完成即算完成）。
+    非法值一律 400。
+    """
+    if scale_id not in _CLASS_REPORT_SCALE_CHOICES:
+        raise HTTPException(status_code=400, detail="scale_id 必须是 all、mht 或 mssmhs")
+
+    scale_filter = (
+        Assessment.scale_id.in_(_CLASS_REPORT_SCALES)
+        if scale_id == "all"
+        else Assessment.scale_id == scale_id
+    )
+
     result = await db.execute(select(Class).options(selectinload(Class.head_teacher)))
     classes = result.scalars().all()
     out = []
@@ -39,7 +56,7 @@ async def class_reports(
             .where(
                 Assessment.user_id.in_(student_ids),
                 Assessment.status == AssessmentStatus.COMPLETED,
-                Assessment.scale_id.in_(("mht", "mssmhs")),
+                scale_filter,
             )
             .options(selectinload(Assessment.result))
         )
@@ -81,90 +98,43 @@ async def class_reports(
                 completion_rate=completion_rate,
                 dimension_means=dim_means,
                 risk_counts=dict(risk_counts),
+                total=total_count,
+                completed=completed_count,
+                pending=max(total_count - completed_count, 0),
             )
         )
     return out
 
 
-@router.post("/dispatch")
-async def dispatch_results(
-    class_id: int,
+@router.get("/export")
+async def export_class_report(
+    class_id: int = Query(...),
+    scale_id: str = Query("mht"),
+    format: str = Query("xlsx"),
     db: AsyncSession = Depends(get_db),
     admin=Depends(require_admin),
 ):
+    """按班级导出学生测评结果（问题 3）。
+
+    仅 school_admin 可调用；导出仅包含学生，绝不包含任何教师量表数据。
+    未完成的学生同样出现在表里（状态=未完成，分数列留空）。
+    """
     cls = await db.get(Class, class_id)
     if cls is None:
         raise HTTPException(status_code=404, detail="班级不存在")
-    head_teacher_id = cls.head_teacher_id
-    if head_teacher_id is None:
-        # 兼容：以教师表 class_id + is_homeroom 指定的班主任为准
-        homeroom_result = await db.execute(
-            select(User).where(
-                User.role == UserRole.TEACHER,
-                User.class_id == class_id,
-                User.is_homeroom.is_(True),
-            )
-        )
-        homeroom = homeroom_result.scalars().first()
-        head_teacher_id = homeroom.id if homeroom else None
-    if head_teacher_id is None:
-        raise HTTPException(status_code=400, detail="该班级未设置班主任")
-    if cls.head_teacher_id is None:
-        cls.head_teacher_id = head_teacher_id
-
-    students_result = await db.execute(
-        select(User).where(User.class_id == class_id, User.role == UserRole.STUDENT)
+    try:
+        headers, rows = await build_class_export(db, cls, scale_id)
+        content, media_type, disposition = render_export(cls, scale_id, format, headers, rows)
+    except ExportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": disposition},
     )
-    student_ids = {s.id for s in students_result.scalars().all()}
-
-    assessments_result = await db.execute(
-        select(Assessment).where(
-            Assessment.user_id.in_(student_ids),
-            Assessment.status == AssessmentStatus.COMPLETED,
-        )
-    )
-    assessments = assessments_result.scalars().all()
-    count = 0
-    for a in assessments:
-        a.distributed_to_teacher_id = head_teacher_id
-        a.distributed_at = _now()
-        count += 1
-    await db.commit()
-    return {"dispatched": count}
 
 
-@router.get("/teacher/class-students-results", response_model=list[ReportOut])
-async def teacher_class_results(
-    db: AsyncSession = Depends(get_db),
-    teacher=Depends(require_role(UserRole.TEACHER)),
-):
-    result = await db.execute(
-        select(Assessment)
-        .where(
-            Assessment.distributed_to_teacher_id == teacher.id,
-            Assessment.status == AssessmentStatus.COMPLETED,
-        )
-        .options(selectinload(Assessment.result), selectinload(Assessment.user))
-    )
-    assessments = result.scalars().all()
-    reports = []
-    for a in assessments:
-        target = a.user
-        if target and target.role == UserRole.TEACHER:
-            # teacher results should never be distributed to another teacher
-            continue
-        reports.append(
-            ReportOut(
-                assessment_id=a.id,
-                scale_id=a.scale_id,
-                scale_name=a.scale_id,
-                status=a.status.value,
-                is_valid=a.is_valid,
-                scores=a.result.scores if a.result else {},
-                risk_flags=a.result.risk_flags if a.result else [],
-                llm_summary=a.result.llm_summary if a.result else None,
-                fallback_used=a.result.fallback_used if a.result else False,
-                created_at=a.result.created_at if a.result else None,
-            )
-        )
-    return reports
+# NOTE: POST /dispatch (manual result distribution) and the distributed-only
+# GET /teacher/class-students-results were removed. Teacher visibility is now
+# automatic (see app/routers/teacher.py::class_results); the legacy
+# Assessment.distributed_to_teacher_id / distributed_at columns are deprecated.

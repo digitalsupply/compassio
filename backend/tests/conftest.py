@@ -12,6 +12,10 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["REDIS_URL"] = "redis://localhost:6379/99"
 os.environ["SECRET_KEY"] = "test-secret"
 os.environ["LLM_ENABLED"] = "false"
+# Observability must be inert in tests: empty endpoint disables tracing and
+# background prefetch is exercised directly by the cache tests.
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = ""
+os.environ["PREFETCH_ENABLED"] = "false"
 
 from app.config import get_settings  # noqa: E402
 from app.db import get_db  # noqa: E402

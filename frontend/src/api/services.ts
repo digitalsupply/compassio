@@ -15,8 +15,51 @@ import type {
   ScaleBrief,
   ScaleDefOut,
   StartAssessmentResponse,
+  TeacherClassResultOut,
+  TeacherClassSummary,
   Token
 } from '@/types'
+
+export function filenameFromDisposition(disposition: string | undefined, fallback: string): string {
+  if (!disposition) return fallback
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
+  if (star) {
+    try {
+      return decodeURIComponent(star[1])
+    } catch {
+      return fallback
+    }
+  }
+  const quoted = /filename="?([^";]+)"?/i.exec(disposition)
+  if (quoted) {
+    try {
+      return decodeURIComponent(quoted[1])
+    } catch {
+      return quoted[1]
+    }
+  }
+  return fallback
+}
+
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+export function downloadResponse(
+  res: { data: Blob; headers: Record<string, any> },
+  fallbackName: string
+): void {
+  const disposition =
+    res.headers?.['content-disposition'] || res.headers?.['Content-Disposition']
+  saveBlob(res.data as Blob, filenameFromDisposition(disposition, fallbackName))
+}
 
 export const authApi = {
   login: (data: LoginRequest) => client.post<Token>('/auth/login', data),
@@ -58,11 +101,25 @@ export const notifyApi = {
 }
 
 export const reportApi = {
-  classes: () => client.get<ClassReport[]>('/admin/reports/classes'),
-  dispatch: (class_id: number) =>
-    client.post<{ dispatched: number }>('/admin/reports/dispatch', { class_id }),
-  teacherClassResults: () =>
-    client.get<ReportOut[]>('/teacher/class-students-results')
+  classes: (scale_id?: string) =>
+    client.get<ClassReport[]>('/admin/reports/classes', { params: { scale_id } }),
+  exportClass: (class_id: number, scale_id: string, format: 'xlsx' | 'csv') =>
+    client.get<Blob>('/admin/reports/export', {
+      params: { class_id, scale_id, format },
+      responseType: 'blob'
+    })
+}
+
+export const teacherApi = {
+  classSummary: (scale_id: string) =>
+    client.get<TeacherClassSummary>('/teacher/class-summary', { params: { scale_id } }),
+  classResults: (scale_id: string) =>
+    client.get<TeacherClassResultOut[]>('/teacher/class-results', { params: { scale_id } }),
+  classExport: (scale_id: string, format: 'xlsx' | 'csv', class_id?: number) =>
+    client.get<Blob>('/teacher/class-export', {
+      params: { scale_id, format, class_id },
+      responseType: 'blob'
+    })
 }
 
 export const llmApi = {

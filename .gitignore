@@ -28,3 +28,4 @@ deploy/k8s/overlays/prod/secret.yaml
 # Data
 *.sqlite3
 *.db
+testdata/账号名单/

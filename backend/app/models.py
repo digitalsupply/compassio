@@ -62,7 +62,9 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=now_utc)
 
-    cls: Mapped[Optional["Class"]] = relationship("Class", foreign_keys=[class_id])
+    cls: Mapped[Optional["Class"]] = relationship(
+        "Class", foreign_keys=[class_id], lazy="selectin"
+    )  # async 下惰性加载会抛 MissingGreenlet，统一预加载
     assessments: Mapped[list["Assessment"]] = relationship(
         "Assessment", back_populates="user", lazy="selectin", foreign_keys="Assessment.user_id"
     )
@@ -115,6 +117,8 @@ class Assessment(Base):
     item_order: Mapped[list] = mapped_column(JsonType, default=list)
     is_valid: Mapped[Optional[bool]] = mapped_column(nullable=True)
     invalidated_reason: Mapped[Optional[str]] = mapped_column(nullable=True)
+    # DEPRECATED: 手动「分发结果」已移除，教师端改为按本班学生+已完成自动可见。
+    # 列保留仅为避免迁移风险，代码不再读写。
     distributed_to_teacher_id: Mapped[Optional[int]] = mapped_column(
         sa.ForeignKey("users.id"), nullable=True
     )

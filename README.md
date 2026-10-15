@@ -19,10 +19,24 @@
 
 | 角色 | 能做的事 |
 |---|---|
-| **校级管理员** | 导入师生名单 → 自动生成账号与初始密码（可打印下发）→ 查看班级完成率与预警通知 → 按班级把学生结果分发给班主任 |
-| **班主任（教师）** | 收到分发后查看本班学生的筛查结果（可打印）；本人也可做教师自评 |
-| **学生** | 登录后选择适合学段的量表作答，全程单题呈现、可断点续答；作答情况由大模型实时调整出题节奏；完成后看到自己的报告与结论 |
+| **校级管理员** | 导入师生名单 → 自动生成账号与初始密码（可打印下发）→ 查看班级完成率 / 维度均值 / 导出结果 → 接收危机预警（站内通知 + 顶部红色横幅） |
+| **班主任（教师）** | **本班学生答完即自动可见**（无需等待管理员分发），可查看 / 打印 / 导出本班结果；本人也可做教师自评 |
+| **学生** | 登录后选择适合学段的量表作答，全程单题呈现、可断点续答；作答由大模型动态调整出题节奏；完成后看到本人报告（学生信息 + 雷达图 + 结论），可打印 |
 | **教师本人** | 填写教师量表 — **结果仅本人可见，任何管理员不可见** |
+
+## 界面预览
+
+| <img src="docs/screenshots/student.jpg" width="430"> | <img src="docs/screenshots/teacher.jpg" width="430"> |
+|:---:|:---:|
+| **学生端 · 我的报告**<br>学生信息 · 雷达图 · LLM 发展性反馈 · 打印 | **班主任端 · 本班学生结果**<br>自动可见 · 维度得分 · 关注提示 · 导出 |
+
+<p align="center">
+  <img src="docs/screenshots/admin.jpg" width="840">
+  <br>
+  <sub>管理员端 · 账号管理：导入师生、同名教师按班级区分、顶部危机预警横幅</sub>
+</p>
+
+> 截图中的姓名与账号均已做脱敏处理。
 
 ## 三套测评量表
 
@@ -38,8 +52,10 @@
 
 - ✅ **实时调整出题**：根据已答情况动态选择下一题（高风险维度优先探查、保证覆盖与效度题必答）
 - ✅ **生成测评结论**：筛查语言（非诊断）、正向框架、可执行建议 + 关怀语；失败时自动回退到模板结论
-- ✅ **极端预警**：命中危机题（如 MHT 85/97、MSSMHS 30）→ **第一批时间**通知校级管理员（站内中心，可扩展企业微信/webhook）
+- 🫶 **LLM 介入时有可见反馈**：等待超过 400ms 才出现「正在为你斟酌下一题…」（正常命中预取不闪烁）；检查点生效时提示「已结合你的作答，微调了后面的题目顺序」
+- ✅ **极端预警**：命中危机题（如 MHT 85/97、MSSMHS 30）→ **第一时间**通知校级管理员（站内中心，可扩展企业微信/webhook）
 - 🚫 **绝不参与计分**：计分是纯确定性引擎，严格按量表 JSON 定义
+- 💰 **成本可控（融合策略）**：规则负责每一题的选题，LLM 每 12~20 题随机检查点才参与一次（一份 100 题 MHT 约 5~8 次调用，而非 84 次）；可用 `ADAPTIVE_STRATEGY=rules_only` 完全关闭 LLM 参与
 - 🚫 **教师预警不通知任何人**：只作为自我关怀提示呈现给教师本人
 
 ## LLM 支持
@@ -53,15 +69,21 @@
 ## 架构
 
 ```
-┌──────────────┐   ┌───────────────────┐   ┌────────────────────┐
-│ Vue3 + TS +  │──▶│ FastAPI (async)   │──▶│ PostgreSQL (CNPG)  │
-│ Element Plus │   │ uvicorn×workers │   │ Redis (会话/限流)  │
-│ ECharts 雷达 │   │ JWT + RBAC        │   └────────────────────┘
+┌──────────────┐   ┌───────────────────┐   ┌─────────────────────────┐
+│ Vue3 + TS +  │──▶│ FastAPI (async)   │──▶│ PostgreSQL + Redis       │
+│ Element Plus │   │ uvicorn×workers   │   │ (业务数据 / 会话缓存)    │
+│ ECharts 雷达 │   │ JWT + RBAC        │   └─────────────────────────┘
 └──────────────┘   │ LLM 抽象 (httpx)  │──▶ openai-compatible 网关
    nginx 托管       └───────────────────┘
 ```
 
-一键容器化部署：`deploy/compose/docker-compose.yml`（Postgres + Redis + backend + frontend nginx，4 条命令起）。
+一键容器化部署：`deploy/compose/docker-compose.yml`（PostgreSQL + Redis + backend + frontend nginx，4 条命令起）。
+
+<p align="center">
+  <img src="docs/screenshots/gitops-argocd.jpg" width="840">
+  <br>
+  <sub>GitOps 部署拓扑（ArgoCD 应用视图）：Ingress → 前后端 Service/Pod → PostgreSQL / Redis</sub>
+</p>
 
 ## 快速开始
 
@@ -69,12 +91,36 @@
 
 ```bash
 cd deploy/compose
-cp .env.example .env      # 编辑密码/LLM key
+cp .env.example .env      # 编辑密码 / LLM key
 docker compose up -d
 # 访问 http://<主机>/
 ```
 
-首次启动自动建表并装载题目库。管理员账号：`admin / Compassio@2026`（**上线后立即改**）。
+首次启动自动建表并装载题目库。**管理员账号需手动初始化**（系统未内建 seed）：
+
+```bash
+docker compose exec backend python -c "
+import asyncio
+from app.db import get_sessionmaker
+from app.models import User, UserRole
+from app.security import hash_password
+async def main():
+    sm = get_sessionmaker()
+    async with sm() as s:
+        s.add(User(role=UserRole.SCHOOL_ADMIN, username='admin',
+                   password_hash=hash_password('Compassio@2026'),
+                   must_change_password=True, real_name='系统管理员', gender='男', is_active=True))
+        await s.commit()
+asyncio.run(main())"
+```
+
+默认管理员：`admin / Compassio@2026`（**首次登录后请立即修改**）。
+
+### 导入顺序（重要）
+
+1. 先到「导入师生 → 教师」上传教师表（含 `班级,是否班主任`），生成教师账号并登记班主任；
+2. 再到「导入师生 → 学生」上传学生表（`姓名,班级,性别,班主任`），学生按班级 + 班主任姓名关联。
+   同名教师按「所在班级」区分，不会错配。
 
 ## 命令速查
 
@@ -87,22 +133,20 @@ docker compose up -d
 
 ## 测试数据
 
-`testdata/` 提供**合成**的导入样例（非真实师生数据），可直接用于体验「导入师生」流程：
+`testdata/` 提供**合成**的导入样例（非真实师生数据），可直接体验「导入师生」流程：
 
 | 文件 | 说明 |
 |---|---|
 | `testdata/教师导入表.xlsx` | sheet `teachers`，列：姓名,手机号,性别,班级,是否班主任（含两个同名班主任，用于演示按班级区分） |
-| `testdata/学生导入表.xlsx` | sheet `students`，列：姓名,班级,性别,班主任 |
+| `testdata/学生导入表.xlsx` | sheet `students`，列：姓名,班级,性别,班主任（9 个班 / 108 名合成学生） |
 | `testdata/工作簿2.xlsx` | 原始底稿（`students` / `teacher` 两个 sheet，含手机号） |
-
-使用方式：管理后台 → 导入师生 → 下载模板 / 上传校验 / 生成账号。
 
 ## 着重声明
 
 - 所有结果属于**发展性筛查参考**，不构成医学诊断；高分提示联系学校心理老师或专业机构
-- 学生心理健康数据按班级最小化分发给班主任；教师数据仅本人可见；系统保留审计日志
-- LLM 超时/失败均自动回退，不影响可用性
+- 学生心理健康数据按班级最小化只对班主任可见；教师数据仅本人可见；系统保留审计日志
+- LLM 超时 / 失败均自动回退，不影响系统可用性
 
 ## 技术文档
 
-- [`SPEC.md`](SPEC.md) — 完整技术规格（数据模型/权限矩阵/自适应算法/LLM 抽象/部署）
+- [`SPEC.md`](SPEC.md) — 完整技术规格（数据模型 / 权限矩阵 / 自适应算法 / LLM 抽象 / 部署）

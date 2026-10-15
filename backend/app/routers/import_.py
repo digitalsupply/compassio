@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.models import Class, GradeLevel, User, UserRole
+from app.observability.metrics import import_created_total
 from app.schemas import ImportCommitResult, ImportPreview, ImportRowError
 from app.security import hash_password, require_admin
 
@@ -372,6 +373,9 @@ async def commit_import(
             cls.head_teacher_id = acc["head_teacher_id"]
 
     await db.commit()
+
+    if created:
+        import_created_total.labels(kind).inc(created)
 
     roster_html = _render_roster_html(kind, rows_for_roster)
     return ImportCommitResult(
