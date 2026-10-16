@@ -115,12 +115,12 @@ async def main():
     async with sm() as s:
         s.add(User(role=UserRole.SCHOOL_ADMIN, username='admin',
                    password_hash=hash_password('Compassio@2026'),
-                   must_change_password=True, real_name='系统管理员', gender='男', is_active=True))
+                   real_name='系统管理员', gender='男', is_active=True))
         await s.commit()
 asyncio.run(main())"
 ```
 
-默认管理员：`admin / Compassio@2026`（**首次登录后请立即修改**）。
+默认管理员：`admin / Compassio@2026`（建议尽快自行修改密码）。
 
 ### 导入顺序（重要）
 

@@ -122,7 +122,7 @@ async def test_bulk_reset_passwords_scope_and_admin_exclusion(client, db):
     for u in (s1, t1):
         await db.refresh(u)
         assert u.initial_password == "School@123"
-        assert u.must_change_password is True
+        assert u.must_change_password is False
     await db.refresh(s2)
     assert s2.initial_password is None
     # 管理员账号始终不被批量重置

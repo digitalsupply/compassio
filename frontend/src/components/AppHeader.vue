@@ -75,6 +75,7 @@ function goLogin() {
           {{ notify.unreadCount }}
         </span>
       </router-link>
+      <router-link to="/change-password" class="nav-link">修改密码</router-link>
       <el-button link type="primary" @click="logout" class="logout">退出</el-button>
     </nav>
     <div v-else class="nav">

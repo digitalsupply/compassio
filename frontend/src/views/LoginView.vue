@@ -18,16 +18,12 @@ async function submit() {
   }
   loading.value = true
   try {
-    const data = await auth.login({
+    await auth.login({
       username: form.value.username,
       password: form.value.password
     })
     ElMessage.success('登录成功')
-    if (data.must_change_password) {
-      router.replace('/change-password')
-    } else {
-      router.replace('/')
-    }
+    router.replace('/')
   } catch (e: any) {
     ElMessage.error(e.response?.data?.detail || '登录失败')
   } finally {

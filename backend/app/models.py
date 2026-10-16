@@ -51,7 +51,8 @@ class User(Base):
     initial_password: Mapped[Optional[str]] = mapped_column(
         sa.String(64), nullable=True
     )
-    must_change_password: Mapped[bool] = mapped_column(default=True)
+    # 系统不再强制首次登录改密（见 SPEC 第 9 节）；该字段仅作历史兼容保留。
+    must_change_password: Mapped[bool] = mapped_column(default=False)
     real_name: Mapped[str] = mapped_column(sa.String(64))
     gender: Mapped[str] = mapped_column(sa.String(8))
     phone: Mapped[Optional[str]] = mapped_column(sa.String(32), nullable=True)

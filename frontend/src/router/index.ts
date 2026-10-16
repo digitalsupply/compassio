@@ -113,23 +113,18 @@ router.beforeEach((to) => {
 
   const authed = auth.hasValidSession
 
-  // 2) 首次登录强制改密：除改密页外，一律先去改密
-  if (authed && auth.mustChange && to.name !== 'ChangePassword') {
-    return { name: 'ChangePassword' }
-  }
-
-  // 3) 已登录访问登录页 → 回到自己的首页
+  // 2) 已登录访问登录页 → 回到自己的首页
   if (to.name === 'Login') {
     return authed ? { path: '/' } : true
   }
 
-  // 4) 公开页（首页 Landing / 登录）放行
+  // 3) 公开页（首页 Landing / 登录）放行
   if (to.meta.public) return true
 
-  // 5) 未登录 → 登录页
+  // 4) 未登录 → 登录页
   if (!authed) return { name: 'Login' }
 
-  // 6) 角色不匹配 → 回到自己的首页（由首页按角色再分流）
+  // 5) 角色不匹配 → 回到自己的首页（由首页按角色再分流）
   if (to.meta.role && to.meta.role !== auth.role) {
     return { path: '/' }
   }

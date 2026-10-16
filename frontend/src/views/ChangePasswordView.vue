@@ -37,7 +37,6 @@ async function submit() {
       old_password: form.value.old_password,
       new_password: form.value.new_password
     })
-    auth.setMustChange(false)
     ElMessage.success('密码修改成功')
     router.replace('/')
   } catch (e: any) {
@@ -53,12 +52,12 @@ async function submit() {
     <div class="login-card">
       <div class="brand">
         <CompassioLogo :size="56" />
-        <h1>首次登录，修改密码</h1>
-        <p class="slogan">为了账号安全，请设置新密码。</p>
+        <h1>修改密码</h1>
+        <p class="slogan">为了账号安全，你可以随时设置新密码。</p>
       </div>
       <el-form :model="form" label-position="top" @submit.prevent="submit">
         <el-form-item label="当前密码">
-          <el-input v-model="form.old_password" type="password" placeholder="初始密码" show-password />
+          <el-input v-model="form.old_password" type="password" placeholder="当前密码" show-password />
         </el-form-item>
         <el-form-item label="新密码（至少 8 位）">
           <el-input v-model="form.new_password" type="password" placeholder="新密码" show-password />
@@ -70,6 +69,7 @@ async function submit() {
           确认修改
         </el-button>
       </el-form>
+      <p class="back"><router-link to="/">← 返回首页</router-link></p>
     </div>
   </div>
 </template>
@@ -105,5 +105,14 @@ async function submit() {
 .submit {
   width: 100%;
   margin-top: 8px;
+}
+.back {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 13px;
+}
+.back a {
+  color: #3b82f6;
+  text-decoration: none;
 }
 </style>

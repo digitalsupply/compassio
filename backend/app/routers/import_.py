@@ -337,7 +337,7 @@ async def commit_import(
             username=username,
             password_hash=hash_password(password),
             initial_password=password,
-            must_change_password=True,
+            must_change_password=False,
             real_name=acc["real_name"],
             gender=acc["gender"],
             phone=acc.get("phone"),

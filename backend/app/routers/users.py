@@ -82,7 +82,7 @@ async def reset_password(
     password = _gen_password()
     user.password_hash = hash_password(password)
     user.initial_password = password
-    user.must_change_password = True
+    user.must_change_password = False
     await db.commit()
     return {"username": user.username, "temporary_password": password}
 
@@ -96,7 +96,7 @@ async def bulk_reset_passwords(
     """把当前筛选内的师生密码统一重置为一个密码（默认 Compassio@2026）。
 
     - 始终排除管理员账号（school_admin），避免把管理员自己锁在门外。
-    - 重置后 must_change_password=true，首次登录仍强制改密。
+    - 重置后不强制改密（must_change_password=False），学生/教师可直接用统一密码登录。
     - 所有账号共用同一份 bcrypt 哈希（明文本就相同），避免逐个哈希拖慢 900+ 账号。
     """
     password = (payload.password or DEFAULT_BULK_PASSWORD).strip() or DEFAULT_BULK_PASSWORD
@@ -122,7 +122,7 @@ async def bulk_reset_passwords(
     for u in users:
         u.password_hash = hashed
         u.initial_password = password
-        u.must_change_password = True
+        u.must_change_password = False
     await db.commit()
     return {"reset": len(users), "password": password}
 
