@@ -11,14 +11,19 @@ function round2(value: number): number {
   return Number.isFinite(value) ? Number(value.toFixed(2)) : 0
 }
 
-const dimensions = computed<{ name: string; value: number }[]>(() => {
+const dimensions = computed<{ name: string; value: number; level?: string; level_label?: string }[]>(() => {
   const scores = props.report?.scores || {}
-  const dims: { name: string; value: number }[] = []
+  const dims: { name: string; value: number; level?: string; level_label?: string }[] = []
   const sub = scores.subscales || {}
   for (const [key, value] of Object.entries(sub)) {
     if (value && typeof value === 'object') {
       const info = value as any
-      dims.push({ name: info.name || key, value: round2(Number(info.score ?? 0)) })
+      dims.push({
+        name: info.name || key,
+        value: round2(Number(info.score ?? 0)),
+        level: info.level,
+        level_label: info.level_label,
+      })
     } else {
       dims.push({ name: key, value: round2(Number(value) || 0) })
     }
@@ -34,6 +39,8 @@ const dimensions = computed<{ name: string; value: number }[]>(() => {
   }
   return dims
 })
+
+const hasLevels = computed(() => dimensions.value.some((d) => !!d.level_label))
 
 const overall = computed(() => {
   const s = props.report?.scores || {}
@@ -155,6 +162,17 @@ function print() {
         <el-table :data="dimensions" border size="small" :header-cell-style="{ background: '#f3f4f6' }">
           <el-table-column prop="name" label="维度" />
           <el-table-column prop="value" label="得分" />
+          <el-table-column v-if="hasLevels" label="分级" width="180">
+            <template #default="{ row }">
+              <el-tag
+                v-if="row.level_label"
+                :type="row.level === 'high' ? 'danger' : row.level === 'mild' ? 'warning' : 'info'"
+                size="small"
+              >
+                {{ row.level_label }}
+              </el-tag>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
     </div>

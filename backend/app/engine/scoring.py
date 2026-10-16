@@ -5,6 +5,23 @@ def _round(value: float) -> float:
     return round(value, 2)
 
 
+# MHT 单分量表三级分级（沿用原量表约定：≤3 无明显倾向 / 4-7 一定困扰 / ≥8 明显倾向）。
+# 该分级为确定性事实，供报告展示与 LLM 措辞锚定，LLM 不得改判。
+_MHT_SUBSCALE_LEVEL_LABELS = {
+    "normal": "无明显倾向",
+    "mild": "存在一定程度的困扰",
+    "high": "存在明显的心理问题倾向",
+}
+
+
+def _mht_subscale_level(total: int, low: int | None, high: int | None) -> str:
+    if high is not None and total >= high:
+        return "high"
+    if low is not None and total <= low:
+        return "normal"
+    return "mild"
+
+
 def score_mht(scale: dict, answers: dict[int, int]) -> dict[str, Any]:
     items = {i["id"]: i for i in scale["items"]}
     validity_ids = set(scale["validity_scale"]["item_ids"])
@@ -14,11 +31,15 @@ def score_mht(scale: dict, answers: dict[int, int]) -> dict[str, Any]:
     subscale_concerns = {}
     for sub in subscales:
         total = sum(answers.get(iid, 0) for iid in sub["item_ids"])
+        level = _mht_subscale_level(total, sub.get("low_cutoff"), sub.get("high_cutoff"))
         subscale_scores[sub["key"]] = {
             "name": sub["name"],
             "score": total,
             "item_count": len(sub["item_ids"]),
             "high_cutoff": sub.get("high_cutoff"),
+            "low_cutoff": sub.get("low_cutoff"),
+            "level": level,
+            "level_label": _MHT_SUBSCALE_LEVEL_LABELS[level],
         }
         if sub.get("high_cutoff") is not None and total >= sub["high_cutoff"]:
             subscale_concerns[sub["key"]] = {

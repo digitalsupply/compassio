@@ -77,6 +77,25 @@ def test_mht_subscale_concern():
     assert "learning_anxiety" in scores["subscale_concerns"]
 
 
+def test_mht_subscale_levels():
+    scale = load_scale("mht.json")
+    la = [i["id"] for i in scale["items"] if i.get("subscale") == "learning_anxiety"]
+
+    def level_for(yes_count: int) -> dict:
+        answers = {i["id"]: 0 for i in scale["items"]}
+        for iid in la[:yes_count]:
+            answers[iid] = 1
+        return score_assessment(scale, answers)["subscales"]["learning_anxiety"]
+
+    # ≤3 无明显倾向 / 4-7 一定困扰 / ≥8 明显倾向
+    assert level_for(3)["level"] == "normal"
+    assert level_for(4)["level"] == "mild"
+    assert level_for(7)["level"] == "mild"
+    assert level_for(8)["level"] == "high"
+    assert level_for(8)["level_label"]
+    assert level_for(3)["low_cutoff"] == 3
+
+
 def test_mssmhs_all_high():
     scale = load_scale("mssmhs.json")
     answers = {i["id"]: 5 for i in scale["items"]}

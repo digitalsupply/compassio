@@ -106,7 +106,7 @@ scales: `GET /admin/scales`(当前题目库版本)、`POST /admin/scales/{scale_
 ### 6.1 计分（engine/scoring.py，纯确定性，禁 LLM 参与）
 
 按题目库 JSON 定义实现：
-- MHT：是=1/不是=0；8 维度求和；效度量表(10题)求和 ≥7 → `is_valid=false`；总分=98 非效度题求和；bands: ≤55 normal / 56-64 subthreshold / ≥65 high；单维度 ≥8 记维度关注。
+- MHT：是=1/不是=0；8 维度求和；效度量表(10题)求和 ≥7 → `is_valid=false`；总分=90 非效度题求和；bands: ≤55 normal / 56-64 subthreshold / ≥65 high；单维度三级分级（≤3 normal / 4-7 mild / ≥8 high，输出 `level`+`level_label`），≥8 同时记维度关注。
 - MSSMHS：1-5 分；因子分=维度均分；≥2 轻度、≥3 中度及以上；总均分 ≥2 提示整体问题。
 - teacher_ref：reverse 题 7-raw；因子分与总均分方向=越高越健康；bands 按 JSON。
 
@@ -143,6 +143,7 @@ scales: `GET /admin/scales`(当前题目库版本)、`POST /admin/scales/{scale_
 
 - LLM 输入：维度得分 JSON + 评级 + 预警标记（**不含逐题原文**，隐私最小化）。
 - Prompt 原则（写死在代码里）：非诊断语言（"筛查结果提示…建议…"）；正向框架；给出 1-2 条可执行建议；出现 high/critical 时建议联系心理老师；结尾一句"这不是标签，只是一次看见自己的机会"风格的关怀语；120-200 字。
+- 确定性锚定：分量表/总分等级由 scoring 层判定（`level`/`level_label`）并随 JSON 传入 prompt，LLM 仅负责措辞、不得改判严重程度；模板结论复用同一套 label。
 - LLM 失败 → 模板结论（按评级+预警维度的确定性文案拼接），`fallback_used=true`。
 - teacher_ref 结论同样生成，但更强调自我关怀与求助渠道，绝不出现"问题/障碍"字眼。
 

@@ -49,6 +49,8 @@ async def generate_conclusion(
             "你是一位学校心理健康筛查助手。请根据以下量表得分与预警标记，写一段120-200字的结论。\n"
             "要求：非诊断语言（\"筛查结果提示…建议…\"）；正向框架；1-2条可执行建议；\n"
             "出现较高风险时建议联系心理老师；结尾一句关怀语\"这不是标签，只是一次看见自己的机会\"。\n"
+            "分量表与总分的等级（subscales 中的 level/level_label，high=明显倾向、mild=一定困扰、normal=无明显倾向）"
+            "已由系统确定性判定，请严格与其保持一致，不得改判或自行调整严重程度。\n"
             + priority_rule +
             f"结果：{scores}\n"
             f"预警：{risk_flags}\n"
@@ -131,6 +133,14 @@ def _template_conclusion(scale_id: str, scores: dict[str, Any], risk_flags: list
         base = "筛查结果提示你有一些值得关注的情绪信号，可以尝试规律作息、适度运动和与信任的人交流。"
     else:
         base = "筛查结果显示你目前心理状态整体平稳，继续保持健康的生活方式。"
+
+    high_names = [
+        info.get("name")
+        for info in (scores.get("subscales") or {}).values()
+        if isinstance(info, dict) and info.get("level") == "high" and info.get("name")
+    ]
+    if high_names:
+        base += f"其中「{'、'.join(high_names)}」维度提示需重点关注。"
 
     if risk_flags:
         severities = {f["severity"] for f in risk_flags}
