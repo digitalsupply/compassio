@@ -168,6 +168,42 @@ export interface ClassOut {
   head_teacher_name: string | null
 }
 
+export interface AccountCreateIn {
+  role: string
+  username: string
+  real_name: string
+  gender?: string
+  phone?: string | null
+  class_id?: number | null
+  class_name?: string | null
+  is_homeroom?: boolean
+  password?: string | null
+}
+
+export interface AccountCreated {
+  id: number
+  role: string
+  username: string
+  real_name: string
+  class_name: string | null
+  is_homeroom: boolean
+  initial_password: string
+}
+
+export interface AccountDeleted {
+  id: number
+  role: string
+  username: string
+  assessments_removed: number
+}
+
+export interface BatchDeleteResult {
+  deleted: AccountDeleted[]
+  skipped: { id: number; username: string | null; reason: string }[]
+  deleted_count: number
+  skipped_count: number
+}
+
 export interface ClassReport {
   class_id: number
   class_name: string

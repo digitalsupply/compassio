@@ -243,6 +243,56 @@ class BulkResetPasswordIn(BaseModel):
     password: str | None = None
 
 
+class AccountCreateIn(BaseModel):
+    """管理员手工新增单个账号（测试数据/临时账号）。"""
+
+    role: str
+    username: str
+    real_name: str
+    gender: str = "男"
+    phone: str | None = None
+    # 班级二选一：class_id 优先；class_name 不存在时会按导入同样的规则新建
+    class_id: int | None = None
+    class_name: str | None = None
+    is_homeroom: bool = False
+    # 留空则自动生成 8 位初始密码
+    password: str | None = None
+
+
+class AccountCreatedOut(BaseModel):
+    id: int
+    role: str
+    username: str
+    real_name: str
+    class_name: str | None = None
+    is_homeroom: bool = False
+    initial_password: str
+
+
+class AccountDeleteResult(BaseModel):
+    id: int
+    role: str
+    username: str
+    assessments_removed: int = 0
+
+
+class SkippedAccount(BaseModel):
+    id: int
+    username: str | None = None
+    reason: str
+
+
+class BatchDeleteIn(BaseModel):
+    user_ids: list[int]
+
+
+class BatchDeleteResult(BaseModel):
+    deleted: list[AccountDeleteResult]
+    skipped: list[SkippedAccount]
+    deleted_count: int
+    skipped_count: int
+
+
 class ClassReport(BaseModel):
     class_id: int
     class_name: str

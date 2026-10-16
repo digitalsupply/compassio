@@ -1,7 +1,12 @@
 import client from './client'
 import type {
+  AccountCreateIn,
+  AccountCreated,
+  AccountDeleted,
   AccountOut,
+  BatchDeleteResult,
   ChangePasswordRequest,
+  ClassOut,
   ClassReport,
   ImportCommitResult,
   ImportPreview,
@@ -85,6 +90,12 @@ export const assessApi = {
 export const usersApi = {
   accounts: (params?: { role?: string; class?: number; q?: string }) =>
     client.get<AccountOut[]>('/admin/accounts', { params }),
+  classes: () => client.get<ClassOut[]>('/admin/classes'),
+  createAccount: (data: AccountCreateIn) =>
+    client.post<AccountCreated>('/admin/accounts', data),
+  deleteAccount: (id: number) => client.delete<AccountDeleted>(`/admin/accounts/${id}`),
+  batchDeleteAccounts: (user_ids: number[]) =>
+    client.post<BatchDeleteResult>('/admin/accounts/batch-delete', { user_ids }),
   resetPassword: (id: number) =>
     client.post<{ username: string; temporary_password: string }>(
       `/admin/accounts/${id}/reset-password`
