@@ -10,6 +10,7 @@ KEY_METRIC_NAMES = (
     "compassio_http_requests_total",
     "compassio_llm_request_duration_seconds",
     "compassio_llm_fallback_total",
+    "compassio_llm_reachability_total",
     "compassio_next_cache_total",
     "compassio_next_llm_wait_seconds",
     "compassio_dependency_up",
@@ -22,6 +23,7 @@ async def test_metrics_endpoint_exposes_key_metrics(client):
     m.inc_next_cache("hit")
     m.observe_llm("pick_next", "test-model", "ok", 0.01)
     m.inc_fallback("pick_next")
+    m.inc_llm_reachability("ok")
 
     resp = await client.get("/metrics")
     assert resp.status_code == 200

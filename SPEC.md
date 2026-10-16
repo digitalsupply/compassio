@@ -10,7 +10,7 @@
 
 | 项 | 值 |
 |---|---|
-| 域名 | compassio.xyz（HTTP:80，用户自行绑 hosts → 入口 IP） |
+| 域名 | compassio.xyz（HTTP:80，用户自行绑 hosts → 10.0.0.252） |
 | LLM 默认 | provider `opencode-go`，model `deepseek-v4.1-flash`，base_url `https://opencode.ai/inference/go/v1` |
 | LLM 网关特殊头 | 必须发送 `x-opencode-session: <每次会话随机串>`（缺该头返回 400 MissingSessionID） |
 | 通知渠道（一期） | 仅站内通知中心（前端 5s 轮询，critical 告警需在管理员页面顶部红色横幅+声音提示）；架构预留 webhook 扩展 |

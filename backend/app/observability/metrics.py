@@ -57,6 +57,12 @@ llm_requests_total = Counter(
     ["stage", "mode"],  # stage=pick_next_checkpoint|conclusion|ping; mode=fusion|adaptive
 )
 
+llm_reachability_total = Counter(
+    "compassio_llm_reachability_total",
+    "Token-free LLM credential/reachability probes, by outcome.",
+    ["outcome"],  # outcome=ok|auth_error|unreachable|config_error
+)
+
 # ---- adaptive selection (fusion strategy) --------------------------------
 adaptive_llm_consulted_total = Counter(
     "compassio_adaptive_llm_consulted_total",
@@ -160,6 +166,13 @@ def inc_fallback(stage: str) -> None:
 def inc_llm_request(stage: str, mode: str) -> None:
     try:
         llm_requests_total.labels(stage, mode or "unknown").inc()
+    except Exception:  # pragma: no cover
+        pass
+
+
+def inc_llm_reachability(outcome: str) -> None:
+    try:
+        llm_reachability_total.labels(outcome or "unknown").inc()
     except Exception:  # pragma: no cover
         pass
 

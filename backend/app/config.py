@@ -45,6 +45,17 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="deepseek-v4.1-flash", alias="LLM_MODEL")
     llm_timeout_s: int = Field(default=30, alias="LLM_TIMEOUT_S")
     llm_enabled: bool = Field(default=True, alias="LLM_ENABLED")
+    # Dependency probing (see app/main.py refresh_dependencies):
+    #   the 30s loop always checks db/redis; the LLM is checked at most every
+    #   llm_reachability_interval_seconds with a *token-free* probe
+    #   (provider.reachable()), and the billed chat ping at most every
+    #   llm_ping_interval_seconds. 0 disables that tier entirely.
+    llm_reachability_interval_seconds: int = Field(
+        default=900, alias="LLM_REACHABILITY_INTERVAL_SECONDS"
+    )
+    llm_ping_interval_seconds: int = Field(
+        default=1800, alias="LLM_PING_INTERVAL_SECONDS"
+    )
 
     # Adaptive item selection strategy (SPEC §6.2):
     #   fusion     - rules pick every item; LLM only at sparse checkpoints

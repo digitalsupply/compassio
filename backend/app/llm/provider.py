@@ -115,11 +115,71 @@ class LLMProvider:
         raise LLMError(f"LLM request failed: {last_error}", status_code=502)
 
     async def ping(self) -> bool:
+        """Billed end-to-end probe: one real (tiny) chat completion.
+
+        Deliberately does not reuse :meth:`chat`: a reasoning model spends the
+        tiny ``max_tokens`` budget on thinking, so ``chat`` would read the empty
+        content as a truncation and retry with ~1200 tokens (线上实测一次 ping
+        产生两次上游推理调用）。HTTP 200 already proves credential + model +
+        upstream path, which is all a ping needs.
+        """
+        headers = {"Content-Type": "application/json"}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+        headers.update(_expand_extra_headers(self.config.extra_headers))
         try:
-            await self.chat(
-                messages=[{"role": "user", "content": "Ping"}],
-                max_tokens=5,
-            )
-            return True
+            self._validate_opencode_session(headers)
+        except LLMError:
+            return False
+        url = f"{self.config.base_url.rstrip('/')}/chat/completions"
+        try:
+            async with self._client() as client:
+                resp = await client.post(
+                    url,
+                    headers=headers,
+                    json={
+                        "model": self.config.model,
+                        "messages": [{"role": "user", "content": "Ping"}],
+                        "max_tokens": 5,
+                    },
+                )
         except Exception:
             return False
+        return resp.status_code < 400
+
+    async def reachable(self) -> tuple[bool, str]:
+        """Token-free credential/reachability probe.
+
+        Sends a deliberately incomplete chat request (``model`` only, no
+        ``messages``): a *valid* credential is rejected with 400
+        (``messages is required``) before any inference starts, while an invalid
+        one returns 401. Neither path bills tokens, so this can run on a short
+        loop where a real :meth:`ping` cannot.
+
+        Returns ``(ok, outcome)`` with outcome one of
+        ``ok | auth_error | unreachable | config_error``.
+        """
+        headers = {"Content-Type": "application/json"}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+        headers.update(_expand_extra_headers(self.config.extra_headers))
+        try:
+            self._validate_opencode_session(headers)
+        except LLMError:
+            return False, "config_error"
+        url = f"{self.config.base_url.rstrip('/')}/chat/completions"
+        try:
+            async with self._client() as client:
+                resp = await client.post(
+                    url, headers=headers, json={"model": self.config.model}
+                )
+        except Exception:
+            return False, "unreachable"
+        if resp.status_code in (401, 403):
+            return False, "auth_error"
+        if resp.status_code in (404, 405):
+            return False, "unreachable"  # 路径写错/端点不存在
+        if resp.status_code < 500:
+            # 2xx / 400 / 422 / 429：凭据已被接受（4xx 是请求体校验失败，未进入推理）。
+            return True, "ok"
+        return False, "unreachable"
