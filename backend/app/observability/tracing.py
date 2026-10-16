@@ -18,7 +18,9 @@ from opentelemetry.trace import Span
 
 logger = logging.getLogger("compassio.tracing")
 
-DEFAULT_ENDPOINT = "http://otel-collector.opentelemetry.svc:4317"
+# 默认关闭 tracing：不把任何部署环境的内部地址写进代码。
+# 需要时用环境变量显式指定，例如 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.<ns>.svc:4317
+DEFAULT_ENDPOINT = ""
 DEFAULT_SERVICE_NAME = "compassio-backend"
 
 _initialized = False

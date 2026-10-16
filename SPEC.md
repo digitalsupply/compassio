@@ -10,20 +10,20 @@
 
 | 项 | 值 |
 |---|---|
-| 域名 | compassio.xyz（HTTP:80，用户自行绑 hosts → 10.0.0.252） |
+| 域名 | 示例 compassio.example.com（自行解析或绑 hosts 到部署主机；HTTP 80 即可，不强制 HTTPS） |
 | LLM 默认 | provider `opencode-go`，model `deepseek-v4.1-flash`，base_url `https://opencode.ai/inference/go/v1` |
 | LLM 网关特殊头 | 必须发送 `x-opencode-session: <每次会话随机串>`（缺该头返回 400 MissingSessionID） |
 | 通知渠道（一期） | 仅站内通知中心（前端 5s 轮询，critical 告警需在管理员页面顶部红色横幅+声音提示）；架构预留 webhook 扩展 |
 | 教师量表 | 参考版（`teacher_ref.json`，`is_reference: true`），题目库 JSON 可热替换，不改代码 |
 | 教师结果隐私 | **硬规则**：任何接口/查询/导出/统计都不得向 school_admin 暴露教师个人测评内容；预警不通知管理员 |
 | 题目库 | `backend/app/scales/data/{mht,mssmhs,teacher_ref}.json` 已就位，**禁止修改这三个文件** |
-| 部署 | 双模式：docker-compose（传统）+ K8s kustomize（CNPG PostgreSQL + Redis + Deployment + Traefik Ingress） |
+| 部署 | 双模式：docker-compose（推荐，单机即可，无需 K8s）+ K8s kustomize（可选，自备集群） |
 
 ## 1. 技术栈
 
 - **后端**：Python 3.11+ / FastAPI（async）/ SQLAlchemy 2.0 async + asyncpg / Alembic / Pydantic v2 / passlib[bcrypt] / python-jose[cryptography]（JWT）/ httpx / openpyxl（Excel 导入）/ redis（aioredis 不用，用 redis-py 的 asyncio）
 - **前端**：Vue 3 + Vite + TypeScript + Element Plus + Pinia + Vue Router；打印用浏览器原生打印（`@media print` 样式），不引入 PDF 库
-- **数据库**：PostgreSQL 16（集群用 CNPG；compose 用官方 postgres:16 镜像）
+- **数据库**：PostgreSQL 16（compose 用官方 postgres:16 镜像；K8s 下自选 operator 或 StatefulSet 均可）
 - **并发目标**：单校 ≤3000 账号、峰值 300 人同时作答；uvicorn 多 worker、DB 连接池 ≥20、作答写路径全部轻量（单行 upsert）
 
 ## 2. 目录结构（monorepo）
@@ -200,8 +200,8 @@ env 默认（config.py）：`LLM_PROVIDER=opencode-go`、`LLM_BASE_URL=…`、`L
 `deploy/compose/docker-compose.yml`：postgres:16、redis:7、backend（uvicorn --workers 4）、frontend（nginx:alpine 托管 dist 并反代 /api→backend:8000）、环境变量在 `.env.example`。提供 `Makefile` 或 `deploy/compose/README.md` 一键说明。
 
 ### 10.2 K8s（kustomize）
-- base：Namespace compassio、Deployment backend（副本 2，liveness/readiness /api/health）、Deployment frontend、Service×2、Redis（单副本 Deployment+PVC 或 emptyDir+缓存语义即可）、CNPG Cluster（compassio-pg，instances 1，storage 10Gi storageClass 由 overlay 注入）、Secret（DB url/JWT secret/LLM env——占位，overlay 用 sealed/普通 Secret）、Ingress（traefik class，host compassio.xyz，HTTP 80）
-- overlays/prod：replicas、storageClassName=csi-rbd（集群已有 ceph-csi-rbd）、镜像 tag newTag 由 CI 更新（kustomize images transformers）、资源 requests/limits
+- base：Namespace、Deployment backend（副本 2，liveness/readiness 走 /api/health）、Deployment frontend、Service×2、Redis（单副本 Deployment + PVC，或 emptyDir + 缓存语义即可）、PostgreSQL（自选 operator 或 StatefulSet，storage 由 overlay 注入）、Secret（DB url / JWT secret / LLM env，占位后由 overlay 覆盖）、Ingress（ingressClass 与 host 由你的集群决定）
+- overlays/prod：replicas、storageClassName（按你的集群选择）、镜像 tag newTag 由 CI 更新（kustomize images transformers）、资源 requests/limits
 - 健康检查端点：`GET /api/health` 返回 db/redis/llm 连通状态
 
 ## 11. 测试（pytest，必须真实通过）
