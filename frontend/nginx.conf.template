@@ -21,6 +21,17 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # 带 hash 的构建产物可长期缓存
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # 入口 HTML 不缓存，避免发版后浏览器仍引用旧资源导致白屏
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    }
+
     error_page 500 502 503 504 /50x.html;
     location = /50x.html {
         root /usr/share/nginx/html;

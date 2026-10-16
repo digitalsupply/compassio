@@ -56,6 +56,7 @@ async function submit() {
         </el-button>
       </el-form>
       <p class="notice">本系统结果属于发展性筛查参考，不构成医学诊断。</p>
+      <p class="back"><router-link to="/">← 返回首页</router-link></p>
     </div>
   </div>
 </template>
@@ -97,5 +98,14 @@ async function submit() {
   font-size: 12px;
   color: #9ca3af;
   text-align: center;
+}
+.back {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 13px;
+}
+.back a {
+  color: #3b82f6;
+  text-decoration: none;
 }
 </style>

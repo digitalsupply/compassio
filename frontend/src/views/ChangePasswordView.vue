@@ -37,7 +37,8 @@ async function submit() {
       old_password: form.value.old_password,
       new_password: form.value.new_password
     })
-    ElMessage.success('密码修改成功，请重新进入系统')
+    auth.setMustChange(false)
+    ElMessage.success('密码修改成功')
     router.replace('/')
   } catch (e: any) {
     ElMessage.error(e.response?.data?.detail || '修改失败')

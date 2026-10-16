@@ -26,6 +26,12 @@
 
 ## 界面预览
 
+<p align="center">
+  <img src="docs/screenshots/home.jpg" width="840">
+  <br>
+  <sub>首页 · Compassio 心育罗盘：系统简介 / 核心优势 / 三套量表 / 适用角色</sub>
+</p>
+
 | <img src="docs/screenshots/student.jpg" width="430"> | <img src="docs/screenshots/teacher.jpg" width="430"> |
 |:---:|:---:|
 | **学生端 · 我的报告**<br>学生信息 · 雷达图 · LLM 发展性反馈 · 打印 | **班主任端 · 本班学生结果**<br>自动可见 · 维度得分 · 关注提示 · 导出 |

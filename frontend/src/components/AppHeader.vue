@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useNotifyStore } from '@/stores/notify'
 import CompassioLogo from './CompassioLogo.vue'
 
 const auth = useAuthStore()
 const notify = useNotifyStore()
+const route = useRoute()
 const router = useRouter()
 
 const nav = computed(() => {
@@ -36,22 +37,32 @@ const nav = computed(() => {
   return []
 })
 
+// full=已登录导航；simple=落地页顶部（仅品牌+登录）；none=登录/改密页不显示
+const mode = computed<'full' | 'simple' | 'none'>(() => {
+  if (auth.isLoggedIn) return route.name === 'ChangePassword' ? 'none' : 'full'
+  return route.name === 'Home' ? 'simple' : 'none'
+})
+
 function logout() {
   auth.logout()
+  router.push('/login')
+}
+
+function goLogin() {
   router.push('/login')
 }
 </script>
 
 <template>
-  <header class="app-header" v-if="auth.isLoggedIn">
-    <div class="brand">
+  <header v-if="mode !== 'none'" class="app-header">
+    <router-link to="/" class="brand">
       <CompassioLogo :size="36" />
       <div class="brand-text">
         <span class="name">Compassio</span>
-        <span class="slogan">提前指引，向阳成长。</span>
+        <span class="slogan">心育罗盘 · 提前指引，向阳成长</span>
       </div>
-    </div>
-    <nav class="nav">
+    </router-link>
+    <nav v-if="mode === 'full'" class="nav">
       <router-link
         v-for="item in nav"
         :key="item.path"
@@ -66,6 +77,9 @@ function logout() {
       </router-link>
       <el-button link type="primary" @click="logout" class="logout">退出</el-button>
     </nav>
+    <div v-else class="nav">
+      <el-button type="primary" round @click="goLogin">登录</el-button>
+    </div>
   </header>
 </template>
 
@@ -85,6 +99,7 @@ function logout() {
   display: flex;
   align-items: center;
   gap: 12px;
+  text-decoration: none;
 }
 .brand-text {
   display: flex;
