@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db import get_db
 from app.models import Class, User
+from app.ratelimit import clear_login_failures, is_login_locked, record_login_failure
 from app.schemas import ChangePasswordRequest, LoginRequest, Token
 from app.security import create_access_token, get_current_user, hash_password, verify_password
 
@@ -16,16 +17,29 @@ router = APIRouter()
 
 @router.post("/login", response_model=Token)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+    # 爆破防护：同一用户名失败次数超限后直接 429，且在锁定期间即使用对密码也拒绝，
+    # 避免攻击者用“是否 200”判定密码正确性。
+    if await is_login_locked(payload.username):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="登录失败次数过多，请稍后再试",
+            headers={
+                "Retry-After": str(get_settings().login_rate_limit_window_seconds)
+            },
+        )
+
     result = await db.execute(select(User).where(User.username == payload.username))
     user = result.scalar_one_or_none()
     if user is None or not user.is_active or not verify_password(
         payload.password, user.password_hash
     ):
+        await record_login_failure(payload.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    await clear_login_failures(payload.username)
     token = create_access_token(
         data={"sub": user.username, "role": user.role},
         expires_delta=timedelta(minutes=get_settings().access_token_expire_minutes),

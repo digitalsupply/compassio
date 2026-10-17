@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class Token(BaseModel):
@@ -176,6 +176,15 @@ class LLMConfigIn(BaseModel):
     is_default: bool = False
 
 
+def mask_api_key(value: str | None) -> str | None:
+    """Mask a secret for display: keep a short prefix/suffix, never the whole key."""
+    if not value:
+        return None
+    if len(value) <= 8:
+        return "****"
+    return f"{value[:3]}****{value[-4:]}"
+
+
 class LLMConfigOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -189,6 +198,11 @@ class LLMConfigOut(BaseModel):
     is_active: bool
     timeout_s: int
     is_default: bool
+
+    @field_serializer("api_key")
+    def _serialize_api_key(self, value: str | None) -> str | None:
+        # 出参一律掩码：明文密钥绝不离开服务端（入库/调用仍在后端完成）。
+        return mask_api_key(value)
 
 
 class ScaleDefOut(BaseModel):

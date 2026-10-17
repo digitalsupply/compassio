@@ -6,7 +6,7 @@ from app.db import get_db
 from app.llm.presets import get_preset
 from app.llm.provider import LLMProvider, ProviderConfig
 from app.models import LLMConfig
-from app.schemas import LLMConfigIn, LLMConfigOut
+from app.schemas import LLMConfigIn, LLMConfigOut, mask_api_key
 from app.security import require_admin
 
 router = APIRouter()
@@ -57,7 +57,13 @@ async def update_config(
         raise HTTPException(status_code=404, detail="配置不存在")
     if data.is_default:
         await _reset_defaults(db, exclude_id=id)
-    for k, v in data.model_dump().items():
+    data_dict = data.model_dump()
+    # 出参是掩码：前端原样回传掩码（或留空）时必须保留已存的真实密钥，
+    # 否则一次编辑就会把 key 冲成掩码字符串。
+    incoming_key = data_dict.get("api_key")
+    if incoming_key is None or incoming_key == "" or incoming_key == mask_api_key(cfg.api_key):
+        data_dict.pop("api_key", None)
+    for k, v in data_dict.items():
         setattr(cfg, k, v)
     await db.commit()
     await db.refresh(cfg)

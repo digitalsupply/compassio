@@ -29,7 +29,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://compassio:${POSTGRES_PASSWORD:-compassio_pg_dev}@postgres:5432/compassio
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_change_me}
-      SECRET_KEY: ${SECRET_KEY:-dev_jwt_secret_change_me}
+      # 启动强校验要求 SECRET_KEY >= 32 字符；生产务必用 .env 覆盖为随机值。
+      SECRET_KEY: ${SECRET_KEY:-dev_only_secret_change_me_before_production_32}
       BCRYPT_ROUNDS: "10"
       LLM_PROVIDER: ${LLM_PROVIDER:-opencode-go}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://opencode.ai/inference/go/v1}

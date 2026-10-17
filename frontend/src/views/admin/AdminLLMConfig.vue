@@ -64,6 +64,8 @@ function openEdit(cfg: LLMConfigOut) {
   isEdit.value = true
   editId.value = cfg.id
   Object.assign(form, { ...cfg })
+  // 后端出参是掩码，不能当作真实 key 回传：留空表示不修改（后端会保留原值）。
+  form.api_key = ''
   extraHeadersText.value = JSON.stringify(cfg.extra_headers || {}, null, 2)
   dialogVisible.value = true
 }
@@ -166,7 +168,12 @@ onMounted(load)
           <el-input v-model="form.base_url" />
         </el-form-item>
         <el-form-item label="API Key">
-          <el-input v-model="form.api_key" type="password" show-password />
+          <el-input
+            v-model="form.api_key"
+            type="password"
+            show-password
+            :placeholder="isEdit ? '留空则不修改（已设置）' : ''"
+          />
         </el-form-item>
         <el-form-item label="模型">
           <el-input v-model="form.model" />

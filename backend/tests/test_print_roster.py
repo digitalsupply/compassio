@@ -1,3 +1,5 @@
+from html import escape
+
 import pytest
 
 from app.models import UserRole
@@ -76,7 +78,9 @@ async def test_print_roster_after_reset_and_self_change(client, db):
     temp = reset.json()["temporary_password"]
 
     roster = await client.get("/api/admin/accounts/print-roster", headers=headers)
-    assert temp in roster.text
+    # 名单是 HTML：初始密码里的 `&<>` 会被转义，断言必须用同样的转义后的形式，
+    # 否则随机密码含 `&` 时用例约 10% 概率假红（P0 flaky）。
+    assert escape(temp) in roster.text
 
     # 本人自助改密 → 清空 initial_password，名单显示“已修改”
     login = await client.post(
@@ -148,3 +152,21 @@ async def test_bulk_reset_passwords_scope_and_admin_exclusion(client, db):
         headers=headers,
     )
     assert bad.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_print_roster_escapes_html_special_password(client, db):
+    """确定性回归：含 HTML 特殊字符的密码在名单里必须转义后出现（P0 flaky 根因）。"""
+    await create_user(db, UserRole.SCHOOL_ADMIN, "admin_esc", real_name="管理员")
+    student = await create_user(db, UserRole.STUDENT, "s_esc", real_name="转义生")
+    raw = "a&b<c>d"
+    await _set_initial_password(db, student, raw)
+
+    token = await auth_token(client, "admin_esc")
+    roster = await client.get(
+        "/api/admin/accounts/print-roster",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert roster.status_code == 200, roster.text
+    assert escape(raw) in roster.text
+    assert raw not in roster.text

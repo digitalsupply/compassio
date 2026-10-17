@@ -5,6 +5,11 @@ from typing import List, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+# JWT 签名密钥的默认值/最小长度。默认值可被公开猜到，等价于任何人都能签发
+# 管理员 token，因此非测试环境启动时必须强校验（见 validate_settings）。
+DEFAULT_SECRET_KEY = "change-me-in-production"
+MIN_SECRET_KEY_LENGTH = 32
+
 
 class Settings(BaseSettings):
     app_name: str = "Compassio Backend"
@@ -32,9 +37,16 @@ class Settings(BaseSettings):
 
     bcrypt_rounds: int = Field(default=10, alias="BCRYPT_ROUNDS")
 
-    secret_key: str = Field(default="change-me-in-production", alias="SECRET_KEY")
+    secret_key: str = Field(default=DEFAULT_SECRET_KEY, alias="SECRET_KEY")
     access_token_expire_minutes: int = Field(default=60 * 24, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     algorithm: str = "HS256"
+
+    # 登录爆破防护：同一用户名在窗口内失败达到次数上限后拒绝登录（Redis 计数）。
+    # Redis 不可用时自动放行（可用性优先，见 app/ratelimit.py）。
+    login_rate_limit_attempts: int = Field(default=10, alias="LOGIN_RATE_LIMIT_ATTEMPTS")
+    login_rate_limit_window_seconds: int = Field(
+        default=300, alias="LOGIN_RATE_LIMIT_WINDOW_SECONDS"
+    )
 
     # LLM env defaults (overridden by DB default config if present)
     llm_provider: str = Field(default="opencode-go", alias="LLM_PROVIDER")
@@ -80,3 +92,23 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_settings(settings: Settings) -> None:
+    """Fail fast on a weak/default ``SECRET_KEY`` (P0 hardening).
+
+    A guessable JWT signing key lets anyone forge admin tokens, so a
+    misconfigured production deployment must refuse to start rather than run
+    with a known secret. Tests (``settings.testing``) are exempt because the
+    suite sets a deliberately short key.
+    """
+    if settings.testing:
+        return
+    key = (settings.secret_key or "").strip()
+    if key == DEFAULT_SECRET_KEY or len(key) < MIN_SECRET_KEY_LENGTH:
+        raise RuntimeError(
+            "SECRET_KEY is missing or too weak: set the SECRET_KEY environment "
+            f"variable to a random value of at least {MIN_SECRET_KEY_LENGTH} "
+            f"characters (got {len(key)}). "
+            "Example: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+        )

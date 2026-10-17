@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
+from app.config import get_settings, validate_settings
 from app.db import JsonType, db_session, get_db, get_engine, get_redis, ping_redis
 from app.llm.service import resolve_provider
 from app.models import Base, ScaleDef, User
@@ -352,6 +352,7 @@ async def _dependency_refresh_loop(stop_event: asyncio.Event) -> None:
 async def lifespan(app: FastAPI):
     setup_logging()
     settings = get_settings()
+    validate_settings(settings)
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
