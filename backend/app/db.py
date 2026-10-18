@@ -5,12 +5,18 @@ import redis.asyncio as redis
 from sqlalchemy import JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm import sessionmaker
 
 from app.config import Settings, get_settings
 
 # JSONB on PostgreSQL, plain JSON everywhere else (sqlite tests).
 JsonType = JSON().with_variant(JSONB(), "postgresql")
+
+# 供「需要追踪原地变更（如 list.append）的 JSON 列」使用。Mutable.as_mutable 是
+# 「实例级」注册：若直接包裹上面的共享 JsonType，会把所有用它的列（payload/scores…）
+# 一并变成 MutableList 并在赋 dict 时抛 TypeError。故单独建一个实例专供这类列。
+JsonListType = MutableList.as_mutable(JSON().with_variant(JSONB(), "postgresql"))
 
 
 def build_engine(settings: Settings):

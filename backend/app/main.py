@@ -99,6 +99,14 @@ async def _apply_light_migrations(conn) -> None:
             "initial_password VARCHAR(64)"
         )
     )
+    # 通知原子去重的唯一索引（新建库由 create_all 依据 models.Notification.__table_args__
+    # 建出同名索引；既有库 create_all 不会给已存在的表补索引，故在此幂等补建）。
+    await conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_notifications_dedup "
+            "ON notifications (recipient_role, ref_student_id, title, body)"
+        )
+    )
 
 
 async def _refresh_user_metrics(db: AsyncSession) -> None:

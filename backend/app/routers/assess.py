@@ -3,7 +3,9 @@ from time import perf_counter
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -322,34 +324,40 @@ async def _maybe_create_notification(
         f"学生 {user.real_name if user else ''}（班级：{user.cls.name if user and user.cls else '-'}）"
         f"在量表 {assessment.scale_id} 命中规则：{flag['message']}"
     )
-    await db.execute(
-        select(Notification).where(
-            Notification.recipient_role == UserRole.SCHOOL_ADMIN,
-            Notification.title == title,
-            Notification.body == body,
-        )
+    severity = (
+        NotificationSeverity(flag["severity"])
+        if flag["severity"] in ("info", "high", "critical")
+        else NotificationSeverity.INFO
     )
-    # naive dedup check
-    existing = await db.execute(
-        select(Notification).where(
-            Notification.recipient_role == UserRole.SCHOOL_ADMIN,
-            Notification.title == title,
-            Notification.body == body,
-        )
+    values = dict(
+        recipient_role=UserRole.SCHOOL_ADMIN,
+        severity=severity,
+        title=title,
+        body=body,
+        ref_student_id=assessment.user_id,
     )
-    if existing.scalar_one_or_none() is None:
-        db.add(
-            Notification(
-                recipient_role=UserRole.SCHOOL_ADMIN,
-                severity=NotificationSeverity(flag["severity"])
-                if flag["severity"] in ("info", "high", "critical")
-                else NotificationSeverity.INFO,
-                title=title,
-                body=body,
-                ref_student_id=assessment.user_id,
-            )
+    # 去重交给数据库唯一索引 uq_notifications_dedup
+    # (recipient_role,ref_student_id,title,body) 原子保证：INSERT ... ON CONFLICT DO NOTHING，
+    # 替代原先「先 SELECT 再 INSERT」——原来的实现不仅多跑了一次结果被丢弃的查询，
+    # 且「查完再插」在多 worker 下有重复通知竞态。
+    dedup_keys = ["recipient_role", "ref_student_id", "title", "body"]
+    dialect = db.get_bind().dialect.name
+    if dialect == "postgresql":
+        stmt = (
+            pg_insert(Notification)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=dedup_keys)
         )
-        await db.commit()
+    elif dialect == "sqlite":
+        stmt = (
+            sqlite_insert(Notification)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=dedup_keys)
+        )
+    else:  # 其他方言退化为普通插入（本项目实际只用 postgres / sqlite）
+        stmt = insert(Notification).values(**values)
+    await db.execute(stmt)
+    await db.commit()
 
 
 @router.post("/{id}/finish", response_model=FinishResponse)

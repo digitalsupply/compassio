@@ -6,7 +6,7 @@ from typing import Optional
 import sqlalchemy as sa
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from app.db import JsonType
+from app.db import JsonListType, JsonType
 
 
 def now_utc() -> datetime:
@@ -119,7 +119,10 @@ class Assessment(Base):
     status: Mapped[AssessmentStatus] = mapped_column(default=AssessmentStatus.IN_PROGRESS)
     started_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=now_utc)
     completed_at: Mapped[Optional[datetime]] = mapped_column(sa.DateTime(timezone=True), nullable=True)
-    item_order: Mapped[list] = mapped_column(JsonType, default=list)
+    # item_order 需要追踪列表的原地变更，否则 `assessment.item_order.append(...)`
+    # 会被静默丢弃、commit 后仍是旧值（docs/05 §5.1 实测复现）。专供此列的
+    # JsonListType（见 app.db）在 MutableList 基础上保持了 PG=JSONB / 其他=JSON 的行为。
+    item_order: Mapped[list] = mapped_column(JsonListType, default=list)
     is_valid: Mapped[Optional[bool]] = mapped_column(nullable=True)
     invalidated_reason: Mapped[Optional[str]] = mapped_column(nullable=True)
     # DEPRECATED: 手动「分发结果」已移除，教师端改为按本班学生+已完成自动可见。
@@ -169,6 +172,20 @@ class Result(Base):
 
 class Notification(Base):
     __tablename__ = "notifications"
+    # 去重键：与 assess._maybe_create_notification 的 INSERT ... ON CONFLICT 配合，
+    # 用数据库唯一性做原子去重（原「先 SELECT 再 INSERT」在多 worker 下有重复通知竞态）。
+    # 含 ref_student_id：同一学生+同内容才去重，不同学生即使文案相同也各留一条。
+    # 既有库由 main._apply_light_migrations 的 CREATE UNIQUE INDEX IF NOT EXISTS 补建。
+    __table_args__ = (
+        sa.Index(
+            "uq_notifications_dedup",
+            "recipient_role",
+            "ref_student_id",
+            "title",
+            "body",
+            unique=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     recipient_role: Mapped[UserRole]
