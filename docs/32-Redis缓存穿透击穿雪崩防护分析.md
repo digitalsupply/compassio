@@ -416,7 +416,64 @@ kubectl -n compassio exec deploy/compassio-redis -- redis-cli PING   # 连通性
 kubectl -n compassio exec deploy/compassio-redis -- redis-cli INFO memory
 ```
 
-## 九、缓存穿透、击穿、雪崩防护
+## 九、Redis 在 LLM 流程中的作用与职责边界
+
+> 一个常见误区：认为"Redis 是内存数据库，所以用它是为了快"。实际上，**决定是否需要 Redis 的是"状态是否需要多 worker 共享"**——单 worker 时进程内变量就够，多 worker（本项目 2 个）才必须用 Redis 做共享介质。"内存快"只是附带优势，不是根本原因。
+
+### 9.1 LLM 推理时，Redis 不参与推理本身
+
+LLM 推理是网络调用（`provider.chat`），走 HTTP 到网关，**Redis 不参与、不加速、不干预**。Redis 管的是推理的"前后"：
+
+| 时机 | Redis 作用 | 代码 |
+| --- | --- | --- |
+| 推理前（节流去重） | `SET NX EX` 互斥锁，每个间隔只让一个 worker 探活/调用，其余复用——**避免重复推理** | `main.py:_acquire_slot` |
+| 推理后（缓存结果） | 把 LLM 推理出的"下一题"存 Redis，后续请求直接读——**避免重复推理 + 共享结果** | `next_cache.py:write_next` |
+
+**核心价值：Redis 减少 LLM 调用次数，而非加速每次调用。** LLM 网络 IO 费时，Redis 的解法是"让 LLM 少被调用"，从而减少费时的 IO。
+
+### 9.2 逐阶段：哪些阶段 Redis 发挥作用
+
+按完整作答流程拆解，PG 与 Redis 各司其职：
+
+| 阶段 | PG | Redis | 说明 |
+| --- | --- | --- | --- |
+| 选题库、记录答案、LLM 结论 | ✅ | ❌ | 必须持久化，Redis 不碰 |
+| 覆盖阶段选题（纯规则） | ❌ | ❌ | 瞬时，都不需要 |
+| **检查点 LLM 推理后** | ❌ | ✅ | 预取缓存推理结果 |
+| **用户点下一题（命中）** | ❌ | ✅ | 读缓存，避免同步等 LLM |
+| **LLM 探活节流** | ❌ | ✅ | `SET NX EX` 锁，避免重复探活 |
+| **登录限流** | ❌ | ✅ | 跨 worker 共享失败计数 |
+
+**预取缓存必须用 Redis 的原因**：2 个 worker，用户这次请求打到 worker A，下次可能打到 worker B。预取是 worker A 答完题时异步做的，但用户点"下一题"可能打到 worker B。若用进程内缓存，B 看不到 A 预取的结果，会重新调 LLM——**预取白做，用户又等 2-5 秒**。Redis 让 B 也能读到 A 预取的结果，预取才有意义。
+
+### 9.3 为什么不能全交给 PostgreSQL
+
+PG 与 Redis **职责不同，不能互相替代**：
+
+| | PostgreSQL | Redis |
+| --- | --- | --- |
+| 本质 | 持久化关系库，磁盘 IO，强一致 | 内存 KV，微秒级，可丢失 |
+| 存什么 | 必须持久化：答案、用户、题库、LLM 结论 | 临时可丢：缓存、计数、锁、健康值 |
+| 延迟 | ms 级（磁盘+索引） | 微秒级（内存） |
+| TTL | 无原生 TTL，需手动清理 | 原生 `EX` 自动过期 |
+| 原子操作 | 需事务/锁，较重 | 原生 `INCR`/`SET NX`，轻量 |
+
+**三个场景 PG 干不好的原因：**
+
+1. **预取缓存**：缓存是临时的（300s），PG 存增加负担且更慢；缓存追求低延迟，PG 磁盘 IO 不如内存。
+2. **探活节流**：PG 无原生 `SET NX EX` 原子锁，实现复杂；探活是高频低价值状态，用 PG 太重。
+3. **限流计数**：每次失败都写 PG 压库；PG 的 INCR 要走事务，Redis 内存原子 INCR 更快；TTL 自动清理。
+
+**职责划分**：**PG 管"必须持久化、不能丢"的；Redis 管"临时、可丢、要跨 worker 共享"的。**
+
+### 9.4 限流的跨 worker 防绕过好处
+
+1. **跨 worker 共享，防绕过**：2 个 worker，若计数放进程内，攻击者可**轮流打两个 worker**，各自计数都没超限从而绕过。Redis 让两个 worker 看到**同一份计数**，绕不过。
+2. **原子性**：`INCR + EXPIRE` 同一 pipeline，避免"INCR 成功、EXPIRE 失败"留下无 TTL 键导致永久锁定。
+3. **性能**：内存计数，不压 PG。
+4. **降级**：Redis 挂了 `is_login_locked` 永远返回 False（放行），宁可不锁也不阻断登录。
+
+## 十、缓存穿透、击穿、雪崩防护
 
 在三处实现的基础上，本项目对三类缓存风险的防护如下。
 
@@ -444,7 +501,7 @@ kubectl -n compassio exec deploy/compassio-redis -- redis-cli INFO memory
 
 **未做**：TTL 无随机抖动（固定 300s，理论同批过期风险）；Redis 单实例无高可用——实际是**用降级兜底而非 Redis 高可用扛雪崩**。
 
-## 十、总结
+## 十一、总结
 
 | 维度 | 说明 |
 | --- | --- |
