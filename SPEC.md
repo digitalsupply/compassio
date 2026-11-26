@@ -181,7 +181,7 @@ env 默认（config.py）：`LLM_PROVIDER=opencode-go`、`LLM_BASE_URL=…`、`L
 - 账号管理支持按当前筛选（班级/角色/关键词）**批量重置密码**为统一密码（默认 `Compassio@2026`，可自定义，至少 8 位）：重置后 `initial_password=统一密码`，便于一次性打印下发（**不强制改密**）；**始终排除管理员账号**，避免管理员被锁。所有被重置账号共用同一份 bcrypt 哈希（明文相同，避免 900+ 账号逐个哈希拖慢）。
 - commit 返回可打印名单（HTML 表格，`@media print`），管理员可批量打印下发。
 - 多工作表 xlsx 按工作表名匹配导入类型（含 `教师/teacher` 或 `学生/student`），匹配不到才退回活动表；教师性别列可留空，记"未知"（学生仍必填）。
-- **导入非幂等**：同一份表重复导入会生成带序号后缀的重复账号（如 `s23baihexiang2`），重复前先清理（见 `docs/02-CI-CD运维手册.md` 第七节）。
+- **导入非幂等**：同一份表重复导入会生成带序号后缀的重复账号（如 `s01tiananya2`），重复前先清理（见 `docs/02-CI-CD运维手册.md` 第七节）。
 - 批量导入性能：bcrypt 轮数由 `BCRYPT_ROUNDS` 控制（默认 10，887 人实测 ≈1分45秒）；nginx 前端已放宽 `proxy_read_timeout/send_timeout=600s`、`client_max_body_size=20m`。新增列走启动时 `_apply_light_migrations`（`ADD COLUMN IF NOT EXISTS`），无需手工迁移。
 
 ## 9. 前端页面

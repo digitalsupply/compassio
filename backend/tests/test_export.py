@@ -293,7 +293,7 @@ async def test_teacher_export_scope_and_forbidden(client, db):
 async def _setup_scale_alignment_class(db, name: str = "九年级(8)班"):
     """复现任务书实证：一名学生 MSSMHS 已完成 / MHT 进行中，另两名待完成。"""
     cls = await create_class(db, name)
-    a = await create_user(db, UserRole.STUDENT, "s24jifenglan", real_name="纪凤兰", class_id=cls.id)
+    a = await create_user(db, UserRole.STUDENT, "s05sutian", real_name="苏天", class_id=cls.id)
     await create_user(db, UserRole.STUDENT, "stu12_b", real_name="乙同学", class_id=cls.id)
     await create_user(db, UserRole.STUDENT, "stu12_c", real_name="丙同学", class_id=cls.id)
     await _make_completed(
@@ -369,7 +369,7 @@ async def test_export_scale_matches_class_completion(client, db):
         )
         assert len(completed) == expected_completed, "导出口径须与班级统计一致"
         if expected_completed == 1:
-            assert completed[0][0] == "纪凤兰"
+            assert completed[0][0] == "苏天"
             assert completed[0][llm_idx] == "该生整体平稳。"
 
 
